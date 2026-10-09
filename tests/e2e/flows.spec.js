@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { readFile } from 'node:fs/promises';
 
 test('organizer publishes, buyer pays, gate admits once, and mobile layout fits', async ({
   page,
@@ -11,7 +12,9 @@ test('organizer publishes, buyer pays, gate admits once, and mobile layout fits'
   await page.getByRole('link', { name: 'Create event', exact: true }).click();
   const name = `Launch Night ${Date.now()}`;
   await page.getByLabel('Event name', { exact: true }).fill(name);
-  await expect(page.locator('.slug-preview')).toContainText(name.toLowerCase().replaceAll(' ', '-'));
+  await expect(page.locator('.slug-preview')).toContainText(
+    name.toLowerCase().replaceAll(' ', '-'),
+  );
   await page
     .getByLabel('About the event')
     .fill('A night of live music and good company in Dar es Salaam.');
@@ -30,6 +33,7 @@ test('organizer publishes, buyer pays, gate admits once, and mobile layout fits'
   const buyer = await context.newPage();
   await buyer.goto(href);
   await expect(buyer.getByRole('heading', { name, exact: true })).toBeVisible();
+  await expect(buyer.getByRole('radio')).toHaveCount(0);
   await expect(buyer.getByRole('link', { name: 'All events', exact: true })).toHaveAttribute(
     'href',
     /goldencreation.localhost:5181/,
@@ -43,6 +47,39 @@ test('organizer publishes, buyer pays, gate admits once, and mobile layout fits'
   await buyer.getByRole('button', { name: 'Approve demo payment' }).click();
   await expect(buyer.getByRole('heading', { name: 'You’re going.' })).toBeVisible();
   await expect(buyer.getByAltText(/QR ticket GE-/)).toBeVisible();
+  const ticketDownload = buyer.waitForEvent('download');
+  await buyer.getByRole('button', { name: 'Save ticket', exact: true }).click();
+  const savedTicket = await ticketDownload;
+  expect(savedTicket.suggestedFilename()).toMatch(/^GE-[A-F0-9]+-ticket\.png$/);
+  await savedTicket.saveAs('test-results/saved-ticket.png');
+  const qrSource = await buyer.getByAltText(/QR ticket GE-/).getAttribute('src');
+  const savedSource = `data:image/png;base64,${(await readFile('test-results/saved-ticket.png')).toString('base64')}`;
+  const qrPreserved = await buyer.evaluate(
+    async ({ qrSource, savedSource }) => {
+      const load = (source) =>
+        new Promise((resolve) => {
+          const image = new Image();
+          image.onload = () => resolve(image);
+          image.src = source;
+        });
+      const [qr, saved] = await Promise.all([load(qrSource), load(savedSource)]);
+      const original = document.createElement('canvas');
+      original.width = 360;
+      original.height = 360;
+      const originalCtx = original.getContext('2d');
+      originalCtx.drawImage(qr, 0, 0);
+      const output = document.createElement('canvas');
+      output.width = 800;
+      output.height = 1280;
+      const outputCtx = output.getContext('2d');
+      outputCtx.drawImage(saved, 0, 0);
+      const a = originalCtx.getImageData(0, 0, 360, 360).data,
+        b = outputCtx.getImageData(220, 720, 360, 360).data;
+      return a.every((value, index) => value === b[index]);
+    },
+    { qrSource, savedSource },
+  );
+  expect(qrPreserved).toBe(true);
   await buyer.screenshot({ path: 'test-results/ticket-desktop.png', fullPage: true });
   const code = await buyer.locator('.ticket-qr .mono').textContent();
   await page.getByRole('button', { name: 'Close', exact: true }).click();
@@ -82,6 +119,10 @@ test('organizer publishes, buyer pays, gate admits once, and mobile layout fits'
     await buyer.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
   ).toBe(true);
   await buyer.screenshot({ path: 'test-results/checkout-mobile.png', fullPage: true });
+  const payButton = await buyer
+    .getByRole('button', { name: 'Pay TZS 20,000', exact: true })
+    .boundingBox();
+  expect(payButton.y + payButton.height).toBeLessThanOrEqual(844);
   await context.close();
 });
 
@@ -117,4 +158,17 @@ test('declined demo payments do not issue tickets and can be retried', async ({ 
   await expect(page.getByAltText(/QR ticket/)).toHaveCount(0);
   await page.getByRole('button', { name: 'Try again', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Pay TZS 20,000', exact: true })).toBeVisible();
+});
+
+test('ticket and quantity changes show the exact payable amount', async ({ page }) => {
+  await page.goto('/e/niffer-party');
+  await expect(page.getByRole('button', { name: 'Pay TZS 20,000', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Add one ticket' }).click();
+  await expect(page.getByRole('button', { name: 'Pay TZS 40,000', exact: true })).toBeVisible();
+  await page.getByRole('radio', { name: /VIP/ }).check();
+  await expect(page.getByRole('button', { name: 'Pay TZS 50,000', exact: true })).toBeVisible();
+  await page
+    .getByRole('button', { name: 'Remove one ticket' })
+    .isDisabled()
+    .then((value) => expect(value).toBe(true));
 });

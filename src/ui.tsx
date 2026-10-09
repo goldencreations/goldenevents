@@ -87,6 +87,15 @@ export function Modal({
     </dialog>
   );
 }
+export function eventImageSource(image: string) {
+  return image.includes('photo-1470229722913')
+    ? '/assets/niffer-party.jpg'
+    : image.includes('photo-1501386761578')
+      ? '/assets/sunset-sessions.jpg'
+      : image.includes('photo-1513364776144')
+        ? '/assets/creative-table.jpg'
+        : image;
+}
 export function EventImage({
   event,
   className = '',
@@ -94,13 +103,7 @@ export function EventImage({
   event: Pick<Event, 'image' | 'name' | 'category'>;
   className?: string;
 }) {
-  const local = event.image.includes('photo-1470229722913')
-    ? '/assets/niffer-party.jpg'
-    : event.image.includes('photo-1501386761578')
-      ? '/assets/sunset-sessions.jpg'
-      : event.image.includes('photo-1513364776144')
-        ? '/assets/creative-table.jpg'
-        : event.image;
+  const local = eventImageSource(event.image);
   return local ? (
     <img className={className} src={local} alt={event.name} loading="lazy" />
   ) : (

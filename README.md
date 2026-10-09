@@ -40,7 +40,7 @@ from the demo database.
 - Ticket types, pricing, quantity controls, capacity reservations, idempotent orders.
 - Demo payment approval/decline and a configurable Flutterwave Tanzania adapter.
 - Server-verified payment completion, durable webhook jobs, periodic reconciliation.
-- Unique QR tickets, download/print, public bearer ticket and order links.
+- Unique QR tickets, complete event-branded PNG downloads, print, public bearer ticket and order links.
 - Phone-camera QR scanner, manual admission, duplicate-admission rejection.
 - Sales dashboard, orders, guests, CSV exports, revenue history, platform administration.
 - Durable SMS/email/WhatsApp outbox and configurable SMTP/Twilio delivery.

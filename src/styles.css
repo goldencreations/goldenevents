@@ -3645,6 +3645,70 @@ tbody tr:hover {
     margin-bottom: 17px;
   }
 }
+.checkout-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+  padding-bottom: 22px;
+}
+.checkout-heading .checkout-icon {
+  width: 34px;
+  height: 34px;
+  margin: 0;
+}
+.checkout-heading h2 {
+  font-size: 19px;
+}
+.quantity-row label small {
+  display: block;
+  font-size: 10px;
+  font-weight: 400;
+  color: #8c9986;
+  margin-top: 5px;
+}
+.checkout .phone-input {
+  height: 48px;
+}
+.checkout .pay-button {
+  min-height: 48px;
+}
+.checkout .ticket-options {
+  margin-bottom: 18px;
+}
+.checkout .ticket-option {
+  min-height: 47px;
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
+.order-paid .golden-ticket {
+  animation: ticket-arrives 220ms ease-out both;
+}
+.order-paid .paid-heading {
+  animation: ticket-arrives 160ms ease-out both;
+}
+@keyframes ticket-arrives {
+  from {
+    opacity: 0;
+    transform: translateY(7px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@media (max-width: 700px) {
+  .checkout-heading {
+    display: none;
+  }
+  .checkout .quantity-row {
+    margin-bottom: 20px;
+  }
+  .checkout-powered {
+    padding-top: 15px;
+    margin-top: 20px;
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   *,
   *:before,

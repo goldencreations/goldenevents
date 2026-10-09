@@ -25,6 +25,7 @@ import { api, send, ApiError, money, dateLabel, timeLabel, shortPhone } from './
 import { useApp } from './context';
 import { Brand, Spinner, ErrorBox, Status, Empty, EventCard, EventImage } from './ui';
 import type { Event, Order } from './types';
+import { saveTicketImage } from './saveTicket';
 
 function PublicHeader() {
   const { user, config } = useApp();
@@ -126,7 +127,7 @@ export function Explore() {
 export function EventPage({ hostSlug }: { hostSlug?: string }) {
   const params = useParams(),
     slug = hostSlug || params.slug,
-    { config } = useApp();
+    { config, notify } = useApp();
   const [searchParams, setSearchParams] = useSearchParams();
   const orderToken = searchParams.get('order') || '';
   const setOrderToken = (token: string) =>
@@ -256,7 +257,7 @@ export function EventPage({ hostSlug }: { hostSlug?: string }) {
                         await navigator.share({ title: event.name, url: event.url });
                       else {
                         await navigator.clipboard.writeText(event.url);
-                        window.alert('Event link copied.');
+                        notify('Event link copied.');
                       }
                     } catch {}
                   }}
@@ -280,8 +281,7 @@ export function EventPage({ hostSlug }: { hostSlug?: string }) {
                     <span className="checkout-icon">
                       <Ticket size={22} />
                     </span>
-                    <h2>Be there.</h2>
-                    <p>Choose your ticket.</p>
+                    <h2>Your ticket</h2>
                   </div>
                   {event.status === 'cancelled' ? (
                     <ErrorBox>This event has been cancelled.</ErrorBox>
@@ -296,33 +296,38 @@ export function EventPage({ hostSlug }: { hostSlug?: string }) {
                         buy();
                       }}
                     >
-                      <fieldset className="ticket-options">
-                        <legend className="sr-only">Ticket type</legend>
-                        {event.tickets.map((t) => (
-                          <label
-                            className={`ticket-option ${typeId === t.id ? 'selected' : ''} ${!t.available ? 'sold-out' : ''}`}
-                            key={t.id}
-                          >
-                            <input
-                              type="radio"
-                              name="ticketType"
-                              checked={typeId === t.id}
-                              disabled={!t.available}
-                              onChange={() => {
-                                setTypeId(t.id!);
-                                setQuantity(1);
-                              }}
-                            />
-                            <span>
-                              <strong>{t.name}</strong>
-                              <small>{t.available ? 'Entry for one person' : 'Sold out'}</small>
-                            </span>
-                            <strong>TZS {money(t.price)}</strong>
-                          </label>
-                        ))}
-                      </fieldset>
+                      {event.tickets.length > 1 && (
+                        <fieldset className="ticket-options">
+                          <legend className="sr-only">Ticket type</legend>
+                          {event.tickets.map((t) => (
+                            <label
+                              className={`ticket-option ${typeId === t.id ? 'selected' : ''} ${!t.available ? 'sold-out' : ''}`}
+                              key={t.id}
+                            >
+                              <input
+                                type="radio"
+                                name="ticketType"
+                                checked={typeId === t.id}
+                                disabled={!t.available}
+                                onChange={() => {
+                                  setTypeId(t.id!);
+                                  setQuantity(1);
+                                }}
+                              />
+                              <span>
+                                <strong>{t.name}</strong>
+                                {!t.available && <small>Sold out</small>}
+                              </span>
+                              <strong>TZS {money(t.price)}</strong>
+                            </label>
+                          ))}
+                        </fieldset>
+                      )}
                       <div className="quantity-row">
-                        <label htmlFor="quantity-count">Quantity</label>
+                        <label htmlFor="quantity-count">
+                          {event.tickets.length === 1 ? selected?.name : 'Tickets'}
+                          <small>TZS {money(selected?.price || 0)} each</small>
+                        </label>
                         <div className="stepper">
                           <button
                             type="button"
@@ -351,6 +356,7 @@ export function EventPage({ hostSlug }: { hostSlug?: string }) {
                             type="tel"
                             inputMode="tel"
                             autoComplete="tel-national"
+                            enterKeyHint="go"
                             required
                             pattern="[0-9+ ()-]{9,18}"
                             value={phone}
@@ -421,18 +427,18 @@ export function EventPage({ hostSlug }: { hostSlug?: string }) {
                         </label>
                       )}
                       {error && <ErrorBox>{error}</ErrorBox>}
-                      <div className="checkout-total">
-                        <span>
-                          Total <small>No added platform fee</small>
-                        </span>
-                        <strong>TZS {money(amount)}</strong>
-                      </div>
+                      <span className="sr-only" aria-live="polite">
+                        Total: TZS {money(amount)}
+                      </span>
                       <button
                         className="button primary full pay-button"
                         disabled={busy || !!closed || config.paymentDriver === 'disabled'}
                       >
                         {busy ? (
-                          <Loader2 className="spin" size={18} />
+                          <>
+                            <Loader2 className="spin" size={18} />
+                            Requesting payment
+                          </>
                         ) : (
                           <>
                             Pay TZS {money(amount)}
@@ -516,7 +522,7 @@ export function OrderContent({ token, onRetry }: { token: string; onRetry?: () =
   const pending = order.status === 'pending',
     paid = order.status === 'paid';
   return (
-    <div className="order-content">
+    <div className={`order-content order-${order.status}`} key={order.status}>
       {pending ? (
         <div className="checkout payment-waiting">
           <span className="waiting-icon">
@@ -561,7 +567,7 @@ export function OrderContent({ token, onRetry }: { token: string; onRetry?: () =
         </div>
       ) : paid ? (
         <>
-          <div className="paid-heading">
+          <div className="paid-heading" role="status">
             <span className="success-icon">
               <Check size={23} />
             </span>
@@ -645,7 +651,8 @@ type TicketData = {
 };
 function TicketContent({ token, compact = false }: { token: string; compact?: boolean }) {
   const [data, setData] = useState<TicketData | null>(null),
-    [error, setError] = useState('');
+    [error, setError] = useState(''),
+    [saving, setSaving] = useState(false);
   const { notify } = useApp();
   useEffect(() => {
     api<TicketData>(`/tickets/${token}`)
@@ -708,15 +715,24 @@ function TicketContent({ token, compact = false }: { token: string; compact?: bo
         >
           <Printer size={18} />
         </button>
-        <a
+        <button
           className="icon-button"
-          href={qr}
-          download={`${ticket.code}-QR.png`}
-          title="Download ticket QR"
-          aria-label="Download ticket QR"
+          disabled={saving || !ticket.valid}
+          title="Save ticket"
+          aria-label="Save ticket"
+          onClick={async () => {
+            setSaving(true);
+            try {
+              await saveTicketImage(event, ticket, qr);
+            } catch {
+              notify('Could not save the ticket. You can print it or keep the ticket link.');
+            } finally {
+              setSaving(false);
+            }
+          }}
         >
-          <Download size={18} />
-        </a>
+          {saving ? <Loader2 className="spin" size={18} /> : <Download size={18} />}
+        </button>
         <button
           className="icon-button"
           title="Copy ticket link"
