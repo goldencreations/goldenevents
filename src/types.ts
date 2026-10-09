@@ -1,0 +1,90 @@
+export type User = {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  phone: string;
+  organization: string;
+};
+export type Config = {
+  baseDomain: string;
+  appOrigin: string;
+  publicOrigin: string;
+  paymentDriver: string;
+  deliveryDriver: string;
+  demo: boolean;
+};
+export type TicketType = {
+  id?: string;
+  name: string;
+  price: number;
+  capacity: number;
+  available?: number;
+};
+export type Event = {
+  id: string;
+  name: string;
+  slug: string;
+  description: string;
+  starts_at: string;
+  venue: string;
+  city: string;
+  category: string;
+  image: string;
+  status: string;
+  tickets: TicketType[];
+  url: string;
+  sold?: number;
+  revenue?: number;
+  checked_in?: number;
+  created_at?: string;
+};
+export type Order = {
+  id: string;
+  token: string;
+  reference: string;
+  event_id: string;
+  event_name: string;
+  slug: string;
+  ticket_type: string;
+  quantity: number;
+  amount: number;
+  phone: string;
+  email: string;
+  status: string;
+  provider: string;
+  created_at: string;
+  expires_at: number;
+};
+export type Guest = {
+  code: string;
+  checked_in_at: string | null;
+  event_id: string;
+  event_name: string;
+  ticket_type: string;
+  phone: string;
+  email: string;
+};
+export type Delivery = {
+  id: string;
+  reference: string;
+  event_name: string;
+  channel: string;
+  recipient: string;
+  body: string;
+  status: string;
+  attempts: number;
+  error: string | null;
+  created_at: string;
+};
+export type Stats = {
+  revenue: number;
+  sold: number;
+  paid_orders: number;
+  pending: number;
+  review: number;
+  events: number;
+  live_events: number;
+  checked_in: number;
+  chart: { date: string; revenue: number; tickets: number }[];
+};

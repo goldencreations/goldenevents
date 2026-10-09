@@ -1,0 +1,22 @@
+services:
+  events:
+    build: .
+    restart: unless-stopped
+    init: true
+    env_file: .env.production
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      DATA_DIR: /app/data
+      SEED_DEMO: 'false'
+    ports:
+      - '127.0.0.1:3001:3001'
+    volumes:
+      - events_data:/app/data
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
+volumes:
+  events_data:
