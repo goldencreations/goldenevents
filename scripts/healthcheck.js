@@ -4,7 +4,7 @@ const req = request(
   {
     hostname: '127.0.0.1',
     port: Number(process.env.PORT || 3001),
-    path: '/api/health',
+    path: '/api/ready',
     headers: { Host: process.env.BASE_DOMAIN || 'goldencreation.localhost' },
     timeout: 4000,
   },

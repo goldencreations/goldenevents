@@ -1,6 +1,72 @@
 import { test, expect } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 
+test('status page bypasses login, fits mobile, and never shows stale or unreachable checks as green', async ({
+  page,
+}) => {
+  await page.route('**/api/config', (route) => route.abort());
+  await page.route('**/api/auth/me', (route) => route.abort());
+  let unreachable = false,
+    stale = false;
+  await page.route('**/api/status', (route) =>
+    unreachable
+      ? route.abort()
+      : route.fulfill({
+          json: {
+            status: 'operational',
+            checked_at: new Date(Date.now() - (stale ? 300000 : 0)).toISOString(),
+            monitor: 'on_server',
+            external_monitoring: false,
+            alerts: false,
+            components: [
+              {
+                id: 'database',
+                label: 'Database',
+                status: 'operational',
+                detail: 'Read and write checks passed.',
+              },
+              {
+                id: 'payments',
+                label: 'Ecofy API',
+                status: 'operational',
+                detail: 'API reachable. Payment authorizations are not tested by this check.',
+              },
+              {
+                id: 'sms',
+                label: 'SMS delivery',
+                status: 'not_configured',
+                detail: 'Automatic delivery is not configured.',
+              },
+            ],
+            days: [],
+            incidents: [],
+          },
+        }),
+  );
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto('/status');
+  await expect(page.getByRole('heading', { name: 'System status', exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'Configured services are operational' }),
+  ).toBeVisible();
+  await expect(page.getByText('Not configured', { exact: true })).toBeVisible();
+  await expect(page.getByText('External monitoring: Not connected', { exact: true })).toBeVisible();
+  await page.screenshot({ path: 'test-results/status-desktop.png', fullPage: true });
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.screenshot({ path: 'test-results/status-mobile.png', fullPage: true });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  unreachable = true;
+  await page.getByRole('button', { name: 'Refresh status' }).click();
+  await expect(page.getByRole('heading', { name: 'Status checks are unreachable' })).toBeVisible();
+  await expect(page.locator('.service-state-label.service-state-operational')).toHaveCount(0);
+  await page.screenshot({ path: 'test-results/status-unreachable-mobile.png', fullPage: true });
+  unreachable = false;
+  stale = true;
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'Status updates are delayed' })).toBeVisible();
+  await expect(page.locator('.service-state-label.service-state-operational')).toHaveCount(0);
+});
+
 test('uncertain Ecofy payments keep checking and never encourage a second payment', async ({
   page,
 }) => {

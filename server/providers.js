@@ -142,6 +142,7 @@ export async function processDeliveries(db, config) {
 }
 
 export function startWorker(db, config) {
+  config.workerHealth.startedAt = Date.now();
   let busy = false,
     lastReconcile = 0;
   const tick = async () => {
@@ -194,14 +195,23 @@ export function startWorker(db, config) {
         }
       }
       await processDeliveries(db, config);
+      config.workerHealth.lastCompleted = Date.now();
+      config.workerHealth.lastFailed = null;
     } finally {
       busy = false;
     }
   };
   const timer = setInterval(
-    () => tick().catch((error) => console.error('Worker:', error.message)),
+    () =>
+      tick().catch((error) => {
+        config.workerHealth.lastFailed = Date.now();
+        console.error('Worker:', error.message);
+      }),
     5000,
   );
   timer.unref();
-  return () => clearInterval(timer);
+  return () => {
+    clearInterval(timer);
+    config.workerHealth.startedAt = null;
+  };
 }

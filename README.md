@@ -47,7 +47,27 @@ from the demo database.
 - Durable SMS/email/WhatsApp outbox and configurable SMTP/Twilio delivery.
 - Docker, Nginx wildcard configuration, database backup command, automated checks.
 
-## Payment and delivery modes
+## Service Status
+
+`/status` is a public, login-independent service page. `/api/health` remains a
+minimal liveness check; `/api/ready` tests database reads/writes and the worker
+heartbeat, returning 503 for failed readiness. Docker uses the readiness endpoint.
+`/api/status` adds storage, Ecofy's unauthenticated health endpoint, payment queues,
+and delivery configuration. No health check creates a payment, sends a message,
+or exposes customer records, credentials, queue errors, or infrastructure paths.
+
+Snapshots are coalesced/cached, provider health is checked at most once a minute,
+and one-minute samples plus observed incidents are retained for 30 days in SQLite.
+Times use Africa/Dar_es_Salaam. Messaging is `not_configured` in outbox mode;
+configured messaging without delivery confirmation is `unknown`, not green.
+Provider API reachability does not certify the underlying payment rail.
+
+This first monitor runs on the same VPS. It cannot observe or serve a status page
+during a complete VPS/network outage. Gaps mean no recorded checks, not uptime.
+External monitoring and outage alerts are not connected. Host the status page and
+observer separately before relying on it for independent downtime reporting.
+
+## Payment and Delivery Configuration
 
 Copy `.env.example` to `.env` when you need configuration. Secrets stay out of Git.
 

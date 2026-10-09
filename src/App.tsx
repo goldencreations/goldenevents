@@ -14,8 +14,20 @@ const EventPage = lazy(() => import('./PublicPages').then((m) => ({ default: m.E
 const OrderPage = lazy(() => import('./PublicPages').then((m) => ({ default: m.OrderPage })));
 const TicketPage = lazy(() => import('./PublicPages').then((m) => ({ default: m.TicketPage })));
 const ClaimPage = lazy(() => import('./TicketSharing').then((m) => ({ default: m.ClaimPage })));
+const StatusPage = lazy(() => import('./StatusPage').then((m) => ({ default: m.StatusPage })));
 
 export function App() {
+  const location = useLocation();
+  if (['/status', '/status/'].includes(location.pathname))
+    return (
+      <Suspense fallback={<Spinner label="Checking service status" />}>
+        <StatusPage />
+      </Suspense>
+    );
+  return <EventApp />;
+}
+
+function EventApp() {
   const [user, setUser] = useState<User | null>(null),
     [config, setConfig] = useState<Config | null>(null),
     [error, setError] = useState(''),

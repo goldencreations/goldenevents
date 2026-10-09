@@ -22,6 +22,7 @@ import {
 } from './domain.js';
 import { initiatePayment } from './providers.js';
 import { verifyEcofySignature } from './ecofy.js';
+import { createHealthMonitor } from './health.js';
 import { renderPage } from './metadata.js';
 import {
   sharingMode,
@@ -34,7 +35,7 @@ import {
   maskedPhone,
 } from './sharing.js';
 
-export function createApp(db, config) {
+export function createApp(db, config, health = createHealthMonitor(db, config)) {
   const app = express();
   app.disable('x-powered-by');
   if (config.production) app.set('trust proxy', 1);
@@ -157,6 +158,11 @@ export function createApp(db, config) {
     return res.json({ user: publicUser(user) });
   };
   app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
+  app.get('/api/ready', (_req, res) => {
+    const result = health.readiness();
+    res.status(result.status === 'ready' ? 200 : 503).json(result);
+  });
+  app.get('/api/status', async (_req, res) => res.json(await health.collect()));
   app.get('/api/config', (_req, res) =>
     res.json({
       baseDomain: config.baseDomain,

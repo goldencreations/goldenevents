@@ -17,6 +17,7 @@ export function makeConfig(overrides = {}) {
       process.env.SEED_DEMO === 'true' || (!production && process.env.SEED_DEMO !== 'false'),
     deliveryDriver: process.env.DELIVERY_DRIVER || 'outbox',
     apiRateLimit: process.env.NODE_ENV === 'test' ? 1200 : 240,
+    workerHealth: { startedAt: null, lastCompleted: null, lastFailed: null },
     ...overrides,
   };
   if (!['demo', 'disabled', 'flutterwave', 'ecofy'].includes(config.paymentDriver))

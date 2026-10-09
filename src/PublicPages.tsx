@@ -49,11 +49,12 @@ export function PublicHeader() {
   );
 }
 export function PublicFooter() {
+  const { config } = useApp();
   return (
     <footer className="public-footer">
       <Brand />
       <span>© {new Date().getFullYear()} Golden Creation</span>
-      <span>Dar es Salaam, Tanzania</span>
+      <a href={`${config.publicOrigin}/status`}>System status</a>
     </footer>
   );
 }

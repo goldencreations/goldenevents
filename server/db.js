@@ -92,6 +92,18 @@ export function openDatabase(dataDir) {
     if (!orderColumns.has('provider_status'))
       db.exec('ALTER TABLE orders ADD COLUMN provider_status TEXT');
     db.exec(`
+      CREATE TABLE IF NOT EXISTS health_probe (
+        id INTEGER PRIMARY KEY CHECK(id=1), checked_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS health_samples (
+        checked_at INTEGER PRIMARY KEY, status TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS health_incidents (
+        id TEXT PRIMARY KEY, component TEXT NOT NULL, label TEXT NOT NULL,
+        started_at INTEGER NOT NULL, resolved_at INTEGER
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_health_incident_open
+        ON health_incidents(component) WHERE resolved_at IS NULL;
       CREATE TABLE IF NOT EXISTS ecofy_jobs (
         order_id TEXT PRIMARY KEY REFERENCES orders(id),
         attempts INTEGER NOT NULL DEFAULT 0, next_attempt INTEGER NOT NULL DEFAULT 0,
