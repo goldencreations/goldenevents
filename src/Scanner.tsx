@@ -6,6 +6,13 @@ import { api, send, dateLabel, shortPhone } from './api';
 import { Shell } from './Dashboard';
 import { ErrorBox, Spinner } from './ui';
 import type { Event } from './types';
+type Admission = {
+  code: string;
+  ticket_type: string;
+  phone: string;
+  holder_name: string;
+  reference: string;
+};
 
 export function Scanner() {
   const [params] = useSearchParams();
@@ -15,10 +22,8 @@ export function Scanner() {
     [camera, setCamera] = useState(false),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(''),
-    [result, setResult] = useState<{ code: string; ticket_type: string; phone: string } | null>(
-      null,
-    ),
-    [history, setHistory] = useState<{ code: string; ticket_type: string; phone: string }[]>([]),
+    [result, setResult] = useState<Admission | null>(null),
+    [history, setHistory] = useState<Admission[]>([]),
     [loading, setLoading] = useState(true);
   const video = useRef<HTMLVideoElement>(null),
     controls = useRef<IScannerControls | null>(null),
@@ -42,10 +47,10 @@ export function Scanner() {
     setError('');
     setResult(null);
     try {
-      const data = await send<{ ticket: { code: string; ticket_type: string; phone: string } }>(
-        '/organizer/check-in',
-        { event_id: eventId, code: value },
-      );
+      const data = await send<{ ticket: Admission }>('/organizer/check-in', {
+        event_id: eventId,
+        code: value,
+      });
       setResult(data.ticket);
       setHistory((h) => [data.ticket, ...h].slice(0, 10));
       setCode('');
@@ -190,10 +195,12 @@ export function Scanner() {
                   <Check size={31} />
                 </span>
                 <h2>You’re in.</h2>
+                {result.holder_name && <strong>{result.holder_name}</strong>}
                 <p>
                   {result.ticket_type} · {shortPhone(result.phone)}
                 </p>
                 <strong className="mono">{result.code}</strong>
+                <p>{result.reference}</p>
               </div>
             )}
             <div className="section-heading">
@@ -208,7 +215,7 @@ export function Scanner() {
                       <Check size={17} />
                     </span>
                     <span>
-                      <strong>{h.code}</strong>
+                      <strong>{h.holder_name || h.code}</strong>
                       <small>
                         {h.ticket_type} · {shortPhone(h.phone)}
                       </small>

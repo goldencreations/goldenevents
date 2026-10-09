@@ -1,0 +1,2 @@
+# Replace on the VPS only. Restrict the token to DNS editing for goldencreations.events.
+dns_cloudflare_api_token = REPLACE_WITH_YOUR_SCOPED_TOKEN

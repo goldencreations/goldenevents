@@ -64,6 +64,57 @@ export function openDatabase(dataDir) {
     CREATE INDEX IF NOT EXISTS idx_orders_type ON orders(ticket_type_id, status);
     CREATE INDEX IF NOT EXISTS idx_tickets_event ON tickets(event_id);
   `);
+  // Additive migrations preserve tickets already issued by older versions.
+  transaction(db, () => {
+    const columns = new Set(
+      db
+        .prepare('PRAGMA table_info(tickets)')
+        .all()
+        .map((c) => c.name),
+    );
+    for (const name of ['holder_name', 'holder_phone', 'claimed_at']) {
+      if (!columns.has(name)) db.exec(`ALTER TABLE tickets ADD COLUMN ${name} TEXT`);
+    }
+    const jobColumns = new Set(
+      db
+        .prepare('PRAGMA table_info(webhook_jobs)')
+        .all()
+        .map((c) => c.name),
+    );
+    if (!jobColumns.has('provider'))
+      db.exec("ALTER TABLE webhook_jobs ADD COLUMN provider TEXT NOT NULL DEFAULT 'flutterwave'");
+    const orderColumns = new Set(
+      db
+        .prepare('PRAGMA table_info(orders)')
+        .all()
+        .map((c) => c.name),
+    );
+    if (!orderColumns.has('provider_status'))
+      db.exec('ALTER TABLE orders ADD COLUMN provider_status TEXT');
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS ecofy_jobs (
+        order_id TEXT PRIMARY KEY REFERENCES orders(id),
+        attempts INTEGER NOT NULL DEFAULT 0, next_attempt INTEGER NOT NULL DEFAULT 0,
+        error TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_ecofy_jobs_due ON ecofy_jobs(next_attempt);
+      CREATE TABLE IF NOT EXISTS ticket_invites (
+        id TEXT PRIMARY KEY, ticket_id TEXT NOT NULL REFERENCES tickets(id),
+        token TEXT NOT NULL UNIQUE, name TEXT NOT NULL, phone TEXT NOT NULL,
+        status TEXT NOT NULL CHECK(status IN ('pending','claimed','cancelled')),
+        expires_at INTEGER NOT NULL, otp_hash TEXT, otp_expires_at INTEGER, otp_mode TEXT,
+        otp_attempts INTEGER NOT NULL DEFAULT 0, total_attempts INTEGER NOT NULL DEFAULT 0,
+        last_sent INTEGER, claim_key TEXT, claimed_at TEXT, created_at TEXT NOT NULL
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_invite_pending
+        ON ticket_invites(ticket_id) WHERE status='pending';
+      CREATE TABLE IF NOT EXISTS ticket_verification_sends (
+        id TEXT PRIMARY KEY, phone_hash TEXT NOT NULL, created_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_verification_phone
+        ON ticket_verification_sends(phone_hash, created_at);
+    `);
+  });
   return db;
 }
 

@@ -2513,6 +2513,10 @@ tbody tr:hover {
   margin: 8px 0;
   line-height: 1.5;
 }
+.ticket-holder span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 .ticket-perforation {
   position: relative;
   border-top: 1px dashed #d5e1cb;
@@ -3718,6 +3722,167 @@ tbody tr:hover {
     scroll-behavior: auto !important;
   }
 }
+.ticket-distribution {
+  min-width: 0;
+}
+.distribution-item {
+  border-bottom: 1px solid var(--line);
+  padding: 12px 0;
+}
+.distribution-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+}
+.distribution-icon {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  background: var(--blue);
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+.distribution-icon.claimed {
+  color: var(--green);
+  background: var(--mint);
+}
+.distribution-person {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.distribution-person strong,
+.distribution-person span,
+.distribution-person small {
+  display: block;
+}
+.distribution-person span {
+  font-size: 12px;
+  color: #68726b;
+  margin-top: 3px;
+}
+.distribution-person small {
+  margin-top: 3px;
+  font-size: 11px;
+}
+.distribution-tools {
+  display: flex;
+  flex-shrink: 0;
+  gap: 2px;
+}
+.distribution-tools .icon-button {
+  width: 34px;
+  height: 36px;
+  padding: 0;
+}
+.distribution-item .golden-ticket {
+  margin-top: 12px;
+}
+.invitation-address {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 12px;
+  padding: 10px 0 4px 46px;
+  color: var(--muted);
+}
+.invitation-address a {
+  color: var(--green);
+  text-decoration: underline;
+}
+.handover-modal form,
+.claim-body form {
+  display: grid;
+  gap: 20px;
+}
+.claim-page {
+  width: min(480px, calc(100% - 32px));
+  margin: 40px auto 72px;
+  min-height: 55vh;
+}
+.claim-tool {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  background: white;
+}
+.claim-cover {
+  width: 100%;
+  aspect-ratio: 5 / 2;
+  object-fit: cover;
+  display: block;
+}
+.claim-body {
+  padding: 24px;
+}
+.claim-body h1 {
+  font-size: 25px;
+  margin: 8px 0;
+  overflow-wrap: anywhere;
+}
+.claim-event-date {
+  font-size: 13px;
+  color: var(--muted);
+}
+.claim-recipient {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 24px 0;
+  padding: 16px 0;
+  border-block: 1px solid var(--line);
+  color: var(--green);
+}
+.claim-recipient div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.claim-recipient strong,
+.claim-recipient span {
+  display: block;
+}
+.claim-recipient strong {
+  color: #202924;
+}
+.claim-recipient span {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.demo-claim-code {
+  display: grid;
+  gap: 6px;
+  padding: 12px 16px;
+  background: #fff5d8;
+  border-left: 3px solid var(--yellow);
+}
+.demo-claim-code span {
+  font-size: 10px;
+  font-weight: 650;
+}
+.demo-claim-code strong {
+  font-size: 24px;
+  font-family: monospace;
+}
+.claim-resend {
+  justify-self: center;
+}
+.claim-unavailable h1 {
+  font-size: 23px;
+  margin-bottom: 20px;
+}
+@media (max-width: 700px) {
+  .claim-page {
+    margin-top: 24px;
+  }
+  .claim-body {
+    padding: 20px;
+  }
+}
 @media print {
   body,
   .public-page {
@@ -3728,6 +3893,8 @@ tbody tr:hover {
   .ticket-actions,
   .toast,
   .paid-heading,
+  .distribution-row,
+  .invitation-address,
   .ticket-confirmation-note {
     display: none !important;
   }

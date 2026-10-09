@@ -1,5 +1,6 @@
 import nodemailer from 'nodemailer';
 import { completeOrder, HttpError } from './domain.js';
+import { initiateEcofy, verifyEcofy, processEcofyPayments } from './ecofy.js';
 
 async function flw(path, options = {}) {
   const response = await fetch(`https://api.flutterwave.com/v3${path}`, {
@@ -19,6 +20,7 @@ async function flw(path, options = {}) {
 
 export async function initiatePayment(db, order, config) {
   if (config.paymentDriver === 'demo') return;
+  if (config.paymentDriver === 'ecofy') return initiateEcofy(db, order, config);
   try {
     const data = await flw('/charges?type=mobile_money_tanzania', {
       method: 'POST',
@@ -43,6 +45,7 @@ export async function initiatePayment(db, order, config) {
 }
 
 export async function verifyPayment(db, order, config, transactionId) {
+  if (order.provider === 'ecofy') return verifyEcofy(db, order, config, transactionId);
   const data = await flw(
     transactionId
       ? `/transactions/${encodeURIComponent(transactionId)}/verify`
@@ -65,7 +68,7 @@ export async function verifyPayment(db, order, config, transactionId) {
   return db.prepare('SELECT * FROM orders WHERE id=?').get(order.id);
 }
 
-async function sendTwilio(delivery) {
+export async function sendTwilio(delivery) {
   const { TWILIO_ACCOUNT_SID: sid, TWILIO_AUTH_TOKEN: token } = process.env;
   if (!sid || !token) throw new Error('Twilio credentials are missing.');
   const whatsapp = delivery.channel === 'whatsapp';
@@ -148,14 +151,16 @@ export function startWorker(db, config) {
       db.prepare("UPDATE orders SET status='expired' WHERE status='pending' AND expires_at<?").run(
         Date.now(),
       );
-      if (config.paymentDriver === 'flutterwave') {
+      if (['flutterwave', 'ecofy'].includes(config.paymentDriver)) {
         for (const job of db
-          .prepare("SELECT * FROM webhook_jobs WHERE status='queued' AND next_attempt<=? LIMIT 10")
-          .all(Date.now())) {
+          .prepare(
+            "SELECT * FROM webhook_jobs WHERE provider=? AND status='queued' AND next_attempt<=? LIMIT 10",
+          )
+          .all(config.paymentDriver, Date.now())) {
           try {
             const order = db
               .prepare('SELECT * FROM orders WHERE reference=? AND provider=?')
-              .get(job.reference, 'flutterwave');
+              .get(job.reference, job.provider);
             if (order) await verifyPayment(db, order, config, job.transaction_id);
             db.prepare("UPDATE webhook_jobs SET status='processed' WHERE id=?").run(job.id);
           } catch (error) {
@@ -171,7 +176,8 @@ export function startWorker(db, config) {
             );
           }
         }
-        if (Date.now() - lastReconcile > 60000) {
+        if (config.paymentDriver === 'ecofy') await processEcofyPayments(db, config);
+        if (config.paymentDriver === 'flutterwave' && Date.now() - lastReconcile > 60000) {
           lastReconcile = Date.now();
           const rows = db
             .prepare(

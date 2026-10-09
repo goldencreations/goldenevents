@@ -24,10 +24,11 @@ import {
 import { api, send, ApiError, money, dateLabel, timeLabel, shortPhone } from './api';
 import { useApp } from './context';
 import { Brand, Spinner, ErrorBox, Status, Empty, EventCard, EventImage } from './ui';
-import type { Event, Order } from './types';
+import type { Event, Order, BookingTicket } from './types';
 import { saveTicketImage } from './saveTicket';
+import { TicketDistribution } from './TicketSharing';
 
-function PublicHeader() {
+export function PublicHeader() {
   const { user, config } = useApp();
   return (
     <header className="public-header">
@@ -47,7 +48,7 @@ function PublicHeader() {
     </header>
   );
 }
-function PublicFooter() {
+export function PublicFooter() {
   return (
     <footer className="public-footer">
       <Brand />
@@ -473,7 +474,7 @@ export function EventPage({ hostSlug }: { hostSlug?: string }) {
 type OrderData = {
   order: Order;
   event: Event;
-  tickets: { token: string; code: string; checked_in_at: string | null }[];
+  tickets: BookingTicket[];
 };
 export function OrderContent({ token, onRetry }: { token: string; onRetry?: () => void }) {
   const { config } = useApp();
@@ -491,10 +492,11 @@ export function OrderContent({ token, onRetry }: { token: string; onRetry?: () =
       .catch((e) => setError(e.message));
   useEffect(() => {
     load();
-    if (data && data.order.status !== 'pending') return;
-    const timer = setInterval(load, 3000);
+    if (data && !['pending', 'paid'].includes(data.order.status) && !data.order.payment_uncertain)
+      return;
+    const timer = setInterval(load, data?.order.status === 'paid' ? 5000 : 3000);
     return () => clearInterval(timer);
-  }, [token, data?.order.status]);
+  }, [token, data?.order.status, data?.order.payment_uncertain]);
   useEffect(() => {
     if (data?.order.status !== 'pending') return;
     const timer = setInterval(() => setRemaining((x) => Math.max(0, x - 1)), 1000);
@@ -578,9 +580,7 @@ export function OrderContent({ token, onRetry }: { token: string; onRetry?: () =
               </p>
             </div>
           </div>
-          {tickets.map((t) => (
-            <TicketContent key={t.token} token={t.token} compact />
-          ))}
+          <TicketDistribution orderToken={token} tickets={tickets} refresh={load} />
           <div className="ticket-confirmation-note">
             <Smartphone size={15} />
             {config.deliveryDriver === 'outbox'
@@ -592,22 +592,27 @@ export function OrderContent({ token, onRetry }: { token: string; onRetry?: () =
         <div className="checkout payment-ended">
           <AlertCircle size={36} />
           <h2>
-            {order.status === 'failed'
-              ? 'Payment declined'
-              : order.status === 'expired'
-                ? 'Reservation expired'
-                : order.status === 'refunded'
-                  ? 'Order refunded'
-                  : 'Payment needs review'}
+            {order.payment_uncertain
+              ? 'Checking your payment'
+              : order.status === 'failed'
+                ? 'Payment declined'
+                : order.status === 'expired'
+                  ? 'Reservation expired'
+                  : order.status === 'refunded'
+                    ? 'Order refunded'
+                    : 'Payment needs review'}
           </h2>
           <p>
-            {order.status === 'review'
-              ? 'Payment was received, but tickets could not be issued. The organizer needs to resolve this order.'
-              : order.status === 'refunded'
-                ? 'These tickets are no longer valid.'
-                : 'No ticket has been issued for this order.'}
+            {order.payment_uncertain
+              ? 'The payment provider has not confirmed an outcome. Do not pay again yet. Keep your booking reference if you contact the organizer.'
+              : order.status === 'review'
+                ? 'Payment was received, but tickets could not be issued. The organizer needs to resolve this order.'
+                : order.status === 'refunded'
+                  ? 'These tickets are no longer valid.'
+                  : 'No ticket has been issued for this order.'}
           </p>
-          {['failed', 'expired'].includes(order.status) &&
+          {!order.payment_uncertain &&
+            ['failed', 'expired'].includes(order.status) &&
             (onRetry ? (
               <button className="button primary full" onClick={onRetry}>
                 Try again
@@ -644,12 +649,14 @@ type TicketData = {
     token: string;
     checked_in_at: string | null;
     ticket_type: string;
+    holder_name: string;
+    holder_phone: string;
     valid: boolean;
   };
   event: Event;
   qr: string;
 };
-function TicketContent({ token, compact = false }: { token: string; compact?: boolean }) {
+export function TicketContent({ token, compact = false }: { token: string; compact?: boolean }) {
   const [data, setData] = useState<TicketData | null>(null),
     [error, setError] = useState(''),
     [saving, setSaving] = useState(false);
@@ -674,6 +681,14 @@ function TicketContent({ token, compact = false }: { token: string; compact?: bo
         </div>
       </div>
       <div className="ticket-info">
+        {ticket.holder_name && (
+          <div className="ticket-holder">
+            <ShieldCheck size={15} />
+            <span>
+              <strong>{ticket.holder_name}</strong> · {ticket.holder_phone}
+            </span>
+          </div>
+        )}
         <div>
           <CalendarDays size={15} />
           <span>

@@ -2,7 +2,7 @@
 
 An event-ticketing platform for Golden Creation: one form to publish an event,
 one mobile-money number to start buying a ticket. Built for
-`goldencreation.events`, `app.goldencreation.events`, and event subdomains.
+`goldencreations.events`, `app.goldencreations.events`, and event subdomains.
 
 ## Run locally
 
@@ -41,6 +41,7 @@ from the demo database.
 - Demo payment approval/decline and a configurable Flutterwave Tanzania adapter.
 - Server-verified payment completion, durable webhook jobs, periodic reconciliation.
 - Unique QR tickets, complete event-branded PNG downloads, print, public bearer ticket and order links.
+- Individual ticket invitations with phone verification, recipient-only credentials, and independent admission.
 - Phone-camera QR scanner, manual admission, duplicate-admission rejection.
 - Sales dashboard, orders, guests, CSV exports, revenue history, platform administration.
 - Durable SMS/email/WhatsApp outbox and configurable SMTP/Twilio delivery.
@@ -53,11 +54,11 @@ Copy `.env.example` to `.env` when you need configuration. Secrets stay out of G
 `PAYMENT_DRIVER=demo` is the local default. Checkout offers explicit demo approve
 and decline buttons. `disabled` prevents purchases. `flutterwave` requires
 `FLW_SECRET_KEY` and `FLW_SECRET_HASH` and an approved provider account. Configure
-the provider webhook at `https://goldencreation.events/api/webhooks/flutterwave`.
+the provider webhook at `https://goldencreations.events/api/webhooks/flutterwave`.
 
 Flutterwave's Tanzania endpoint requires customer email, so this driver requests
 an email at checkout. The phone-only design remains the default demo experience;
-a provider that allows phone-only charging can be added behind the same interface.
+Ecofy supports phone-only charging without requiring an email.
 No PIN is ever collected by this website. Payment initiation does not issue a
 ticket: transaction reference, provider ID, currency, amount, and successful status
 must pass server-side verification. A late payment that cannot be fulfilled is
@@ -67,6 +68,55 @@ Official integration references:
 - [Tanzania mobile money](https://developer.flutterwave.com/docs/tanzania)
 - [Transaction verification](https://developer.flutterwave.com/docs/transaction-verification)
 - [Webhooks](https://developer.flutterwave.com/docs/webhooks)
+
+### Ecofy Mobile Money
+
+`PAYMENT_DRIVER=ecofy` requires `ECOFY_API_KEY` and `ECOFY_WEBHOOK_SECRET`.
+`ECOFY_BASE_URL` defaults to `https://ecofypay.ecofy.co.tz`, the current origin
+provided by the merchant. The supplied [Collection API contract](https://claude.ai/code/artifact/6fd4d5ae-3f52-41bd-a529-1354659dfb67)
+shows an older origin; confirm the contract with Ecofy before public sales.
+Production requires an activated account and `sk_live_` key; local integration
+testing can use a test key. Never expose either secret to the frontend or Git.
+
+Register `https://goldencreations.events/api/webhooks/ecofy` using Ecofy's
+`POST /v1/webhook-endpoints` with a stable `Idempotency-Key`. Save the returned
+one-time `secret` privately as `ECOFY_WEBHOOK_SECRET`. The app validates HMAC on
+the raw bytes with a five-minute timestamp tolerance, queues duplicate-safe jobs,
+and confirms each notification with `GET /v1/payments/{id}` before issuing tickets.
+Live callbacks observed on 2026-10-09 use `{ id, type, created_at, data }`, with
+the payment in `data`. The handler accepts that signed event envelope and the
+bare payment format described in the supplied contract. Event type and payment
+status must match; signed non-payment events are acknowledged without fulfilment.
+
+Amounts are whole TZS, never multiplied by 100. Each booking has one stable
+reference and provider idempotency key. Persistent jobs retry unclear requests
+with exactly the same payload and key, surviving server restarts. The checkout
+countdown uses the provider's `expires_at` once known. Only `succeeded` fulfils;
+failed/cancelled payments do not issue tickets. Retries never create a new attempt.
+Missing responses remain uncertain, not failed. After the local reservation ends,
+recovery uses read-only paginated payment lookup rather than initiating a new
+charge. Automatic reconciliation covers the first 24 hours and at most 1,000
+listed payments per lookup; unresolved bookings need provider/manual review.
+
+This integration handles mobile-money collections only, not QR payment checkout,
+refunds, organizer payouts, or wallet withdrawals. Payment keys can move money:
+keep them only in the mode-600 VPS environment file. Do not enable public sales
+until a small authorized payment, decline, timeout/retry, and webhook delivery
+have been tested against Ecofy. Mock tests do not certify the live payment rail.
+
+On the VPS, enter only the API key privately in `.env.production` using `nano`.
+Keep `PAYMENT_DRIVER=disabled`. Then prepare the webhook without printing secrets:
+
+```sh
+docker compose --project-directory /opt/goldenevents run --rm --no-deps --user root \
+  -v /opt/goldenevents:/setup events \
+  node scripts/configure-ecofy.js /setup/.env.production
+```
+
+This verifies the active live merchant, registers an all-events webhook, and
+atomically saves its one-time secret to the private environment file. It creates
+no payments and does not enable checkout. Repeating setup uses a stable webhook
+idempotency key. If interrupted after registration, retry with the same settings.
 
 `DELIVERY_DRIVER=outbox` records messages locally and never claims to send them.
 Set `DELIVERY_DRIVER=live` with SMTP settings for email and Twilio credentials and
@@ -79,7 +129,35 @@ accepted the message, not that the recipient read it. Retry sends can produce a
 duplicate notification if a provider accepted an earlier timed-out request.
 
 Ticket pages remain available even if message delivery fails. Treat ticket and
-order URLs as private: possession grants access to the purchased tickets.
+order URLs as private: possession grants access to tickets still held by the buyer.
+
+## Buy Together, Arrive Separately
+
+Buy four tickets in one checkout, keep your own, and use the send icon beside each
+remaining ticket to create an invitation with a friend's name and Tanzania mobile
+number. Copy the invitation link or share it on WhatsApp. The recipient verifies
+their number and claims just that ticket, without an organizer account. Their QR
+and manual admission code are replaced atomically; the buyer's old link, saved
+image, and code stop working. The booking page shows claim status but never exposes
+the recipient's new admission credentials. Each friend can arrive independently.
+The gate scanner and guest list show the recipient and original booking reference.
+
+Invitations expire after 48 hours. Pending invitations can be cancelled or replaced;
+claimed or admitted tickets cannot be taken back or handed over again. Scanning an
+unclaimed ticket prevents a later claim. Refunded orders and cancelled events cannot
+be claimed or admitted. Verification codes expire after five minutes, have bounded
+attempts, and are rate limited by invitation, phone number, and request IP.
+
+Local demo checkout plus outbox mode displays an explicitly labelled test code on
+the recipient's claim page; this does **not** prove phone ownership. Live handover
+requires `DELIVERY_DRIVER=live` and `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, and
+`TWILIO_SMS_FROM`. Missing SMS configuration disables handover, rather than accepting
+unverified claims. Codes are not placed in the organizer outbox or booking response.
+Invitation links are shared manually; verification SMS is sent on recipient request.
+Confirm the sending provider's Tanzania support and delivery using real devices
+before launch. Names are supplied by the buyer, not independently verified identities.
+After claiming, keep the private ticket link; cross-device ticket recovery and
+re-entry are not part of this feature yet.
 
 ## What is not live yet
 
@@ -118,18 +196,19 @@ are saved under `test-results/` and excluded from Git.
 
 Tests cover authentication/ownership, cross-origin rejection, stock reservations,
 duplicate checkout/payment notifications, late payment stock conflicts, rejected
-verification mismatches, cancelled events, duplicate admissions, demo refunds,
+verification mismatches, secure ticket handover, cancelled events, duplicate admissions, demo refunds,
 outbox delivery, publishing, successful/failed purchases, and desktop/mobile layout.
 
 ## Deploy to Contabo
 
 1. Install Docker and Nginx on your VPS. Point DNS `@`, `app`, and `*` to its IP.
 2. Clone this repository. Copy `deploy/production.env.example` to `.env.production`.
-   Configure your domain and keep `PAYMENT_DRIVER=disabled` until integration is ready.
+   Configure `goldencreations.events` and keep `PAYMENT_DRIVER=disabled` until integration is ready.
 3. Run `docker compose up -d --build`. Only localhost port 3001 is exposed.
-4. Install a certificate covering `goldencreation.events` and `*.goldencreation.events`.
-   Configure `deploy/nginx.conf` with its paths, validate Nginx, and reload it.
-   Cloudflare Origin CA certificates require proxied records and Full (strict) mode.
+4. Install a certificate covering `goldencreations.events` and `*.goldencreations.events`.
+   The Nginx template uses Certbot's live certificate paths. Enable it only after
+   issuance. Install `deploy/cloudflare-realip.conf` as
+   `/etc/nginx/snippets/goldenevents-cloudflare-realip.conf`, validate Nginx, and reload it.
 5. Create an administrator in the container. Set `ADMIN_PASSWORD` securely in the
    container's environment and invoke `node scripts/create-admin.js`; it prompts
    for name and email. No default production administrator is created.
@@ -140,6 +219,37 @@ Production startup rejects demo payments, demo seeding, and non-HTTPS origins.
 Use a fresh production volume; never copy the demo database onto the VPS.
 SQLite suits the initial single-VPS deployment. Use one application instance with
 one durable local database; concurrent replicas need a different database/job setup.
+
+### Cloudflare DNS and Wildcard HTTPS
+
+Keep the domain registered at Namecheap, add it to Cloudflare, and replace its
+Namecheap nameservers with the two nameservers Cloudflare assigns. Set DNS-only
+A records for `@`, `app`, `www`, and `*` to the VPS address. Preserve existing mail
+records. If DNSSEC was enabled, remove the old delegation before switching and
+enable Cloudflare DNSSEC after activation.
+
+Install Certbot's Cloudflare DNS plugin. Create a token restricted to DNS editing
+for `goldencreations.events`, and put it in `/root/.secrets/certbot/cloudflare.ini`
+using `deploy/cloudflare.ini.example` as the format. Keep the directory mode 700
+and credentials file mode 600. Never commit or send the real token in chat.
+Request both names with Certbot's DNS-01 authenticator and a real operator email:
+
+```sh
+certbot certonly --dns-cloudflare \
+  --dns-cloudflare-credentials /root/.secrets/certbot/cloudflare.ini \
+  --dns-cloudflare-propagation-seconds 60 \
+  --cert-name goldencreations.events \
+  -d goldencreations.events -d '*.goldencreations.events'
+```
+
+Install `deploy/certbot-renew-hook.sh` as an executable file under
+`/etc/letsencrypt/renewal-hooks/deploy/`, enable `certbot.timer`, and test with
+`certbot renew --dry-run`. Leave DNS-only records initially; proxying is optional.
+When enabling Cloudflare's proxy later, use Full (strict), not Flexible, TLS mode.
+Do not cache private ticket, booking, claim, dashboard, or API responses.
+The real-IP snippet trusts only Cloudflare's published proxy networks so rate
+limits use the visitor's IP. Keep its network list current using Cloudflare's
+official IPv4/IPv6 lists; do not trust forwarded headers from arbitrary sources.
 
 `npm run backup` uses SQLite's backup API and copies uploaded pictures into
 `data/backups/<timestamp>/`. In Docker, run `node scripts/backup.js` inside the

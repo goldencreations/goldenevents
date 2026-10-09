@@ -13,6 +13,7 @@ const Explore = lazy(() => import('./PublicPages').then((m) => ({ default: m.Exp
 const EventPage = lazy(() => import('./PublicPages').then((m) => ({ default: m.EventPage })));
 const OrderPage = lazy(() => import('./PublicPages').then((m) => ({ default: m.OrderPage })));
 const TicketPage = lazy(() => import('./PublicPages').then((m) => ({ default: m.TicketPage })));
+const ClaimPage = lazy(() => import('./TicketSharing').then((m) => ({ default: m.ClaimPage })));
 
 export function App() {
   const [user, setUser] = useState<User | null>(null),
@@ -69,6 +70,7 @@ export function App() {
           <Route path="/e/:slug" element={<EventPage />} />
           <Route path="/order/:token" element={<OrderPage />} />
           <Route path="/ticket/:token" element={<TicketPage />} />
+          <Route path="/claim/:token" element={<ClaimPage />} />
           <Route path="/dashboard/events/new" element={protectedPage(<EventEditor />)} />
           <Route path="/dashboard/events/:id/edit" element={protectedPage(<EventEditor />)} />
           <Route path="/dashboard/scan" element={protectedPage(<Scanner />)} />

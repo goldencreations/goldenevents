@@ -21,7 +21,18 @@ import {
   normalizePhone,
 } from './domain.js';
 import { initiatePayment } from './providers.js';
+import { verifyEcofySignature } from './ecofy.js';
 import { renderPage } from './metadata.js';
+import {
+  sharingMode,
+  bookingTickets,
+  createInvite,
+  cancelInvite,
+  pendingInvite,
+  requestClaimCode,
+  claimTicket,
+  maskedPhone,
+} from './sharing.js';
 
 export function createApp(db, config) {
   const app = express();
@@ -41,6 +52,7 @@ export function createApp(db, config) {
         : false,
     }),
   );
+  app.use('/api/webhooks/ecofy', express.raw({ type: 'application/json', limit: '64kb' }));
   app.use(express.json({ limit: '64kb' }), cookieParser());
   app.use('/api', (_req, res, next) => {
     res.set('Cache-Control', 'no-store');
@@ -50,7 +62,7 @@ export function createApp(db, config) {
     '/api',
     rateLimit({
       windowMs: 60000,
-      limit: 240,
+      limit: config.apiRateLimit,
       standardHeaders: 'draft-8',
       legacyHeaders: false,
       message: { error: 'Too many requests. Try again shortly.' },
@@ -70,6 +82,13 @@ export function createApp(db, config) {
     legacyHeaders: false,
     message: { error: 'Too many payment requests. Try again shortly.' },
   });
+  const claimLimit = rateLimit({
+    windowMs: 900000,
+    limit: 40,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+    message: { error: 'Too many ticket verification attempts. Try again later.' },
+  });
   app.use((req, res, next) => {
     const host = req.hostname;
     const allowed =
@@ -80,7 +99,7 @@ export function createApp(db, config) {
     if (
       req.path.startsWith('/api/') &&
       !['GET', 'HEAD', 'OPTIONS'].includes(req.method) &&
-      req.path !== '/api/webhooks/flutterwave'
+      !['/api/webhooks/flutterwave', '/api/webhooks/ecofy'].includes(req.path)
     ) {
       let valid = false;
       try {
@@ -145,6 +164,7 @@ export function createApp(db, config) {
       publicOrigin: config.publicOrigin,
       paymentDriver: config.paymentDriver,
       deliveryDriver: config.deliveryDriver,
+      ticketSharing: sharingMode(config),
       demo: config.seedDemo && !config.production,
     }),
   );
@@ -327,12 +347,40 @@ export function createApp(db, config) {
     const { idempotency_key, provider_id, ...safe } = order;
     const event = db.prepare('SELECT * FROM events WHERE id=?').get(order.event_id);
     res.json({
-      order: safe,
+      order: {
+        ...safe,
+        payment_uncertain:
+          order.provider === 'ecofy' &&
+          order.status === 'expired' &&
+          !['failed', 'cancelled'].includes(order.provider_status),
+      },
       event: cleanEvent(db, event, config),
-      tickets: db
-        .prepare('SELECT token,code,checked_in_at FROM tickets WHERE order_id=?')
-        .all(order.id),
+      tickets: bookingTickets(db, order.id, config),
     });
+  });
+  app.post('/api/orders/:token/tickets/:id/invite', claimLimit, (req, res) => {
+    res.status(201).json(createInvite(db, config, req.params.token, req.params.id, req.body));
+  });
+  app.delete('/api/orders/:token/tickets/:id/invite', (req, res) => {
+    cancelInvite(db, req.params.token, req.params.id);
+    res.json({ ok: true });
+  });
+  app.get('/api/claims/:token', (req, res) => {
+    const invite = pendingInvite(db, req.params.token);
+    const event = db.prepare('SELECT * FROM events WHERE id=?').get(invite.event_id);
+    res.json({
+      name: invite.name,
+      phone: maskedPhone(invite.phone),
+      ticket_type: invite.ticket_type,
+      event: cleanEvent(db, event, config),
+      expires_at: invite.expires_at,
+    });
+  });
+  app.post('/api/claims/:token/code', claimLimit, async (req, res) => {
+    res.json(await requestClaimCode(db, config, req.params.token));
+  });
+  app.post('/api/claims/:token/accept', claimLimit, (req, res) => {
+    res.json(claimTicket(db, config, req.params.token, req.body));
   });
   app.post('/api/orders/:token/demo', (req, res) => {
     if (config.production || config.paymentDriver !== 'demo')
@@ -365,6 +413,41 @@ export function createApp(db, config) {
     }
     res.json({ ok: true });
   });
+  app.post('/api/webhooks/ecofy', (req, res) => {
+    if (
+      config.paymentDriver !== 'ecofy' ||
+      !verifyEcofySignature(req.get('ecofy-signature'), req.body, config.ecofyWebhookSecret)
+    )
+      throw new HttpError(401, 'Invalid webhook signature.');
+    let payment;
+    try {
+      payment = JSON.parse(req.body.toString('utf8'));
+    } catch {
+      throw new HttpError(400, 'Invalid webhook.');
+    }
+    // Live Ecofy callbacks wrap the payment in a signed event envelope.
+    if (typeof payment?.type === 'string') {
+      const eventType = payment.type;
+      if (!eventType.startsWith('payment.')) return res.json({ ok: true, ignored: true });
+      payment = payment.data;
+      if (eventType !== `payment.${payment?.status}`)
+        throw new HttpError(400, 'Invalid webhook event.');
+    }
+    if (
+      typeof payment?.id !== 'string' ||
+      !/^pay_[A-Za-z0-9]+$/.test(payment.id) ||
+      typeof payment.reference !== 'string' ||
+      payment.reference.length > 100 ||
+      !['created', 'pending', 'processing', 'succeeded', 'failed', 'cancelled'].includes(
+        payment.status,
+      )
+    )
+      throw new HttpError(400, 'Invalid webhook.');
+    db.prepare(
+      'INSERT OR IGNORE INTO webhook_jobs (id,transaction_id,reference,provider) VALUES (?,?,?,?)',
+    ).run(`ecofy:${payment.id}:${payment.status}`, payment.id, payment.reference, 'ecofy');
+    res.json({ ok: true });
+  });
   app.get('/api/tickets/:token', async (req, res) => {
     const ticket = db
       .prepare(
@@ -379,6 +462,8 @@ export function createApp(db, config) {
         token: ticket.token,
         checked_in_at: ticket.checked_in_at,
         ticket_type: ticket.ticket_type,
+        holder_name: ticket.holder_name || '',
+        holder_phone: ticket.holder_phone ? maskedPhone(ticket.holder_phone) : '',
         valid: ticket.status === 'paid' && event.status !== 'cancelled',
       },
       event: cleanEvent(db, event, config),
@@ -401,7 +486,7 @@ export function createApp(db, config) {
     res.json({
       guests: db
         .prepare(
-          'SELECT t.code,t.checked_in_at,t.event_id,o.phone,o.email,e.name AS event_name,tt.name AS ticket_type FROM tickets t JOIN orders o ON o.id=t.order_id JOIN events e ON e.id=t.event_id JOIN ticket_types tt ON tt.id=o.ticket_type_id WHERE e.owner_id=? AND o.status=? ORDER BY t.created_at DESC',
+          "SELECT t.code,t.checked_in_at,t.event_id,COALESCE(t.holder_phone,o.phone) AS phone,COALESCE(t.holder_name,'') AS holder_name,CASE WHEN t.claimed_at IS NULL THEN o.email ELSE '' END AS email,o.reference,e.name AS event_name,tt.name AS ticket_type FROM tickets t JOIN orders o ON o.id=t.order_id JOIN events e ON e.id=t.event_id JOIN ticket_types tt ON tt.id=o.ticket_type_id WHERE e.owner_id=? AND o.status=? ORDER BY t.created_at DESC",
         )
         .all(req.user.id, 'paid'),
     }),
@@ -546,7 +631,9 @@ export function createApp(db, config) {
             )
             .get(slug)
         : null;
-      const privatePage = /^\/(?:ticket|order|dashboard|login|register)(?:\/|$)/.test(req.path);
+      const privatePage = /^\/(?:ticket|order|claim|dashboard|login|register)(?:\/|$)/.test(
+        req.path,
+      );
       res
         .status(slug && !event ? 404 : 200)
         .type('html')

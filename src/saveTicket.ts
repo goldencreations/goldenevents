@@ -40,7 +40,7 @@ function linesFor(ctx: CanvasRenderingContext2D, text: string, width: number) {
 
 export async function saveTicketImage(
   event: Event,
-  ticket: { code: string; ticket_type: string; checked_in_at: string | null },
+  ticket: { code: string; ticket_type: string; checked_in_at: string | null; holder_name?: string },
   qr: string,
 ) {
   await document.fonts.ready;
@@ -121,6 +121,7 @@ export async function saveTicketImage(
     1155,
   );
   ctx.font = '400 15px "DM Sans Variable", sans-serif';
+  if (ticket.holder_name) ctx.fillText(ticket.holder_name, 400, 1188, 704);
   ctx.fillText('Golden Creation', 400, 1222);
   const blob = await new Promise<Blob>((resolve, reject) =>
     canvas.toBlob(

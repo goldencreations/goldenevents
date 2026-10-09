@@ -867,7 +867,9 @@ function GuestsPage({ guests, events }: { guests: Guest[]; events: Event[] }) {
     (g) =>
       (event === 'all' || g.event_id === event) &&
       (status === 'all' || (status === 'in') === !!g.checked_in_at) &&
-      `${g.code} ${g.phone} ${g.email}`.toLowerCase().includes(query.toLowerCase()),
+      `${g.code} ${g.holder_name} ${g.phone} ${g.email} ${g.reference}`
+        .toLowerCase()
+        .includes(query.toLowerCase()),
   );
   return (
     <>
@@ -879,13 +881,15 @@ function GuestsPage({ guests, events }: { guests: Guest[]; events: Event[] }) {
           className="button secondary"
           onClick={() =>
             downloadCSV('golden-guests.csv', [
-              ['Code', 'Event', 'Phone', 'Email', 'Ticket', 'Checked in'],
+              ['Code', 'Event', 'Guest', 'Phone', 'Email', 'Ticket', 'Booking', 'Checked in'],
               ...filtered.map((g) => [
                 g.code,
                 g.event_name,
+                g.holder_name,
                 g.phone,
                 g.email,
                 g.ticket_type,
+                g.reference,
                 g.checked_in_at || '',
               ]),
             ])
@@ -904,7 +908,7 @@ function GuestsPage({ guests, events }: { guests: Guest[]; events: Event[] }) {
           <Search size={16} />
           <input
             aria-label="Search guests"
-            placeholder="Search phone or ticket code"
+            placeholder="Search guest, phone or ticket code"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
@@ -944,8 +948,8 @@ function GuestsPage({ guests, events }: { guests: Guest[]; events: Event[] }) {
                 <tr key={g.code}>
                   <td className="mono">{g.code}</td>
                   <td>
-                    {shortPhone(g.phone)}
-                    <small>{g.email || '—'}</small>
+                    {g.holder_name || shortPhone(g.phone)}
+                    <small>{g.holder_name ? shortPhone(g.phone) : g.email || '—'}</small>
                   </td>
                   <td>{g.event_name}</td>
                   <td>{g.ticket_type}</td>

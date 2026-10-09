@@ -1,6 +1,52 @@
 import { test, expect } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 
+test('uncertain Ecofy payments keep checking and never encourage a second payment', async ({
+  page,
+}) => {
+  const event = (await (await page.request.get('/api/events')).json()).events[0];
+  let uncertain = true;
+  await page.route('**/api/config', async (route) => {
+    const config = await (await route.fetch()).json();
+    await route.fulfill({ json: { ...config, paymentDriver: 'ecofy' } });
+  });
+  await page.route('**/api/orders/ecofy-uncertain-test', (route) =>
+    route.fulfill({
+      json: {
+        order: {
+          id: 'ecofy-uncertain-test',
+          token: 'ecofy-uncertain-test',
+          reference: 'GE-UNCERTAIN',
+          event_id: event.id,
+          quantity: 4,
+          amount: 2000,
+          phone: '+255712345678',
+          email: '',
+          status: 'expired',
+          provider: 'ecofy',
+          expires_at: 0,
+          payment_uncertain: uncertain,
+        },
+        event,
+        tickets: [],
+      },
+    }),
+  );
+  await page.goto('/order/ecofy-uncertain-test');
+  await expect(page.getByRole('heading', { name: 'Checking your payment' })).toBeVisible();
+  await expect(page.getByText(/Do not pay again yet/)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Try again' })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Back to event' })).toHaveCount(0);
+  await page.screenshot({ path: 'test-results/ecofy-checking-desktop.png', fullPage: true });
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.screenshot({ path: 'test-results/ecofy-checking-mobile.png', fullPage: true });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  uncertain = false;
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'Reservation expired' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Back to event' })).toBeVisible();
+});
+
 test('organizer publishes, buyer pays, gate admits once, and mobile layout fits', async ({
   page,
   browser,
@@ -171,4 +217,135 @@ test('ticket and quantity changes show the exact payable amount', async ({ page 
     .getByRole('button', { name: 'Remove one ticket' })
     .isDisabled()
     .then((value) => expect(value).toBe(true));
+});
+
+test('buy four, keep one, hand three to friends, and admit everyone independently', async ({
+  page,
+  browser,
+}) => {
+  test.setTimeout(90000);
+  const errors = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  await page.goto('/login');
+  await page.getByRole('button', { name: 'Open demo workspace' }).click();
+  await expect(page.getByRole('heading', { name: /Good/ })).toBeVisible();
+  const created = await page.request.post('/api/organizer/events', {
+    headers: { Origin: 'http://localhost:5181' },
+    data: {
+      name: `Friends Night ${Date.now()}`,
+      description: 'Four friends arrive separately for a night of live music.',
+      starts_at: '2027-02-20T17:00:00Z',
+      venue: 'Warehouse 7',
+      city: 'Dar es Salaam',
+      category: 'Nightlife',
+      image: 'https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3',
+      status: 'published',
+      tickets: [{ name: 'Regular', price: 20000, capacity: 4 }],
+    },
+  });
+  expect(created.status()).toBe(201);
+  const { event } = await created.json();
+  const buyerContext = await browser.newContext();
+  const buyer = await buyerContext.newPage();
+  buyer.on('pageerror', (error) => errors.push(error.message));
+  await buyer.goto(event.url);
+  for (let i = 0; i < 3; i++) await buyer.getByRole('button', { name: 'Add one ticket' }).click();
+  await buyer.getByLabel('Mobile money number', { exact: true }).fill('0712345678');
+  await buyer.getByRole('button', { name: 'Pay TZS 80,000', exact: true }).click();
+  await buyer.getByRole('button', { name: 'Approve demo payment' }).click();
+  await expect(buyer.getByTestId('booking-ticket')).toHaveCount(4);
+  const bookingUrl = buyer.url();
+  const orderToken = new URL(bookingUrl).searchParams.get('order');
+  const original = await (await buyer.request.get(`/api/orders/${orderToken}`)).json();
+  const names = ['Asha', 'Juma', 'Neema'];
+  const phoneSuffix = String(Date.now() % 10000000).padStart(7, '0');
+  const friendNumbers = names.map((_, i) => `07${phoneSuffix}${i}`);
+  const friendCodes = [];
+  await buyer.getByRole('button', { name: 'Send ticket 4 to a friend' }).click();
+  await buyer.getByLabel("Friend's name").fill('Cancelled Invite');
+  await buyer.getByLabel("Friend's mobile number").fill('0712345679');
+  await buyer.getByRole('button', { name: 'Create invitation', exact: true }).click();
+  await buyer.getByRole('button', { name: 'Cancel invitation for ticket 4' }).click();
+  await expect(buyer.getByRole('button', { name: 'Send ticket 4 to a friend' })).toBeVisible();
+  for (let i = 0; i < 3; i++) {
+    const number = i + 2;
+    await buyer.getByRole('button', { name: `Send ticket ${number} to a friend` }).click();
+    await buyer.getByLabel("Friend's name").fill(names[i]);
+    await buyer.getByLabel("Friend's mobile number").fill(friendNumbers[i]);
+    if (i === 0) {
+      await buyer.setViewportSize({ width: 390, height: 844 });
+      await buyer.screenshot({ path: 'test-results/handover-mobile.png', fullPage: true });
+      expect(
+        await buyer.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+      ).toBe(true);
+    }
+    await buyer.getByRole('button', { name: 'Create invitation', exact: true }).click();
+    const row = buyer.getByTestId('booking-ticket').nth(number - 1);
+    await expect(row).toContainText(`Waiting for ${names[i]}`);
+    const link = await row.getByRole('link', { name: 'Open invitation' }).getAttribute('href');
+    const friendContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    const friend = await friendContext.newPage();
+    friend.on('pageerror', (error) => errors.push(error.message));
+    await friend.goto(link);
+    await expect(friend.getByText(names[i], { exact: true })).toBeVisible();
+    await friend.getByRole('button', { name: 'Verify my number' }).click();
+    const otp = await friend.getByTestId('demo-claim-code').textContent();
+    await friend.getByLabel('Verification code').fill('000000');
+    await friend.getByRole('button', { name: 'Claim my ticket' }).click();
+    await expect(friend.getByText('That verification code is incorrect.')).toBeVisible();
+    if (i === 0) await friend.screenshot({ path: 'test-results/claim-mobile.png', fullPage: true });
+    await friend.getByLabel('Verification code').fill(otp);
+    await friend.getByRole('button', { name: 'Claim my ticket' }).click();
+    await expect(friend).toHaveURL(/\/ticket\/[a-f0-9]+/);
+    await expect(friend.getByAltText(/QR ticket GE-/)).toHaveCount(1);
+    await expect(friend.locator('.ticket-holder')).toContainText(names[i]);
+    friendCodes.push(await friend.locator('.ticket-qr .mono').textContent());
+    expect(
+      await friend.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    ).toBe(true);
+    if (i === 0)
+      await friend.screenshot({ path: 'test-results/claimed-ticket-mobile.png', fullPage: true });
+    await expect(row).toContainText('Claimed', { timeout: 10000 });
+    await expect(row.getByRole('button', { name: /Send ticket/ })).toHaveCount(0);
+    expect(
+      (await buyer.request.get(`/api/tickets/${original.tickets[number - 1].token}`)).status(),
+    ).toBe(404);
+    await friendContext.close();
+  }
+  await buyer.reload();
+  await expect(buyer.getByText('Claimed', { exact: true })).toHaveCount(3);
+  await buyer.screenshot({ path: 'test-results/four-tickets-mobile.png', fullPage: true });
+  await buyer.setViewportSize({ width: 1440, height: 1000 });
+  await buyer.reload();
+  await expect(buyer.getByText('Claimed', { exact: true })).toHaveCount(3);
+  await expect(buyer.locator('.public-header')).toHaveCount(1);
+  expect(
+    await buyer.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+  ).toBe(true);
+  await buyer.screenshot({ path: 'test-results/four-tickets-desktop.png', fullPage: true });
+  await page.goto(`/dashboard/scan?event=${event.id}`);
+  await page.getByLabel('Ticket code or ticket link').fill(original.tickets[1].code);
+  await page.getByRole('button', { name: 'Admit guest' }).click();
+  await expect(page.getByText('This ticket does not belong to this event.')).toBeVisible();
+  for (const [code, name] of [
+    [friendCodes[1], 'Juma'],
+    [original.tickets[0].code, ''],
+    [friendCodes[0], 'Asha'],
+    [friendCodes[2], 'Neema'],
+  ]) {
+    await page.getByLabel('Ticket code or ticket link').fill(code);
+    await page.getByRole('button', { name: 'Admit guest' }).click();
+    await expect(page.getByRole('heading', { name: 'You’re in.' })).toBeVisible();
+    if (name) await expect(page.locator('.scan-success')).toContainText(name);
+  }
+  await page.screenshot({ path: 'test-results/friends-admitted-desktop.png', fullPage: true });
+  await page.getByLabel('Ticket code or ticket link').fill(friendCodes[0]);
+  await page.getByRole('button', { name: 'Admit guest' }).click();
+  await expect(page.getByText(/Already admitted at/)).toBeVisible();
+  await page.goto('/dashboard/guests');
+  await page.getByLabel('Search guests').fill('Asha');
+  await expect(page.locator('tbody')).toContainText('Asha');
+  await expect(page.locator('tbody')).toContainText(friendNumbers[0]);
+  expect(errors).toEqual([]);
+  await buyerContext.close();
 });

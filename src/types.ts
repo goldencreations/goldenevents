@@ -13,6 +13,7 @@ export type Config = {
   paymentDriver: string;
   deliveryDriver: string;
   demo: boolean;
+  ticketSharing: 'demo' | 'sms' | 'disabled';
 };
 export type TicketType = {
   id?: string;
@@ -55,8 +56,11 @@ export type Order = {
   provider: string;
   created_at: string;
   expires_at: number;
+  payment_uncertain?: boolean;
 };
 export type Guest = {
+  holder_name: string;
+  reference: string;
   code: string;
   checked_in_at: string | null;
   event_id: string;
@@ -64,6 +68,16 @@ export type Guest = {
   ticket_type: string;
   phone: string;
   email: string;
+};
+export type BookingTicket = {
+  id: string;
+  token?: string;
+  code?: string;
+  checked_in_at: string | null;
+  holder_name: string;
+  holder_phone: string;
+  claimed: boolean;
+  invite: { name: string; phone: string; url: string; expires_at: number } | null;
 };
 export type Delivery = {
   id: string;

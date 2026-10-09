@@ -291,6 +291,8 @@ export function reserveOrder(db, input, config) {
         .map(() => '?')
         .join(',')})`,
     ).run(...Object.values(order));
+    if (config.paymentDriver === 'ecofy')
+      db.prepare('INSERT INTO ecofy_jobs (order_id) VALUES (?)').run(order.id);
     return { order, created: true };
   });
 }
@@ -356,7 +358,7 @@ export function checkIn(db, user, eventId, rawCode) {
   return transaction(db, () => {
     const ticket = db
       .prepare(
-        'SELECT t.*,o.status,o.phone,tt.name AS ticket_type FROM tickets t JOIN orders o ON o.id=t.order_id JOIN ticket_types tt ON tt.id=o.ticket_type_id WHERE t.token=? OR t.code=?',
+        'SELECT t.*,o.status,o.phone,o.reference,tt.name AS ticket_type FROM tickets t JOIN orders o ON o.id=t.order_id JOIN ticket_types tt ON tt.id=o.ticket_type_id WHERE t.token=? OR t.code=?',
       )
       .get(code, code?.toUpperCase());
     if (!ticket || ticket.event_id !== eventId)
@@ -375,7 +377,9 @@ export function checkIn(db, user, eventId, rawCode) {
       code: ticket.code,
       ticket_type: ticket.ticket_type,
       checked_in_at: now,
-      phone: ticket.phone,
+      phone: ticket.holder_phone || ticket.phone,
+      holder_name: ticket.holder_name || '',
+      reference: ticket.reference,
     };
   });
 }

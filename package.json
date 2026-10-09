@@ -12,7 +12,7 @@
     "start": "NODE_ENV=production node --env-file-if-exists=.env server/index.js",
     "test": "node --test tests/*.test.js",
     "test:e2e": "playwright test",
-    "test:e2e:serve": "concurrently -k \"PORT=3101 DATA_DIR=./data/e2e PUBLIC_ORIGIN=http://goldencreation.localhost:5181 APP_ORIGIN=http://app.goldencreation.localhost:5181 node server/index.js\" \"API_PORT=3101 vite --host 127.0.0.1 --port 5181 --strictPort\"",
+    "test:e2e:serve": "concurrently -k \"NODE_ENV=test PORT=3101 DATA_DIR=./data/e2e PUBLIC_ORIGIN=http://goldencreation.localhost:5181 APP_ORIGIN=http://app.goldencreation.localhost:5181 node server/index.js\" \"API_PORT=3101 vite --host 127.0.0.1 --port 5181 --strictPort\"",
     "check": "npm run build && npm test",
     "admin:create": "node --env-file-if-exists=.env scripts/create-admin.js",
     "backup": "node --env-file-if-exists=.env scripts/backup.js"
