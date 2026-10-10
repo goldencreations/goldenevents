@@ -95,6 +95,11 @@ export function openDatabase(dataDir) {
       CREATE TABLE IF NOT EXISTS health_probe (
         id INTEGER PRIMARY KEY CHECK(id=1), checked_at INTEGER NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS whatsapp_ticket_messages (
+        delivery_id TEXT NOT NULL REFERENCES deliveries(id),
+        ticket_id TEXT NOT NULL REFERENCES tickets(id), ticket_token TEXT NOT NULL,
+        media_id TEXT, message_id TEXT, PRIMARY KEY(delivery_id,ticket_id)
+      );
       CREATE TABLE IF NOT EXISTS health_samples (
         checked_at INTEGER PRIMARY KEY, status TEXT NOT NULL
       );

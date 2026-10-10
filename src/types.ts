@@ -12,6 +12,7 @@ export type Config = {
   publicOrigin: string;
   paymentDriver: string;
   deliveryDriver: string;
+  whatsappDriver?: string;
   demo: boolean;
   ticketSharing: 'demo' | 'sms' | 'disabled';
 };

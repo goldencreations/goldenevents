@@ -151,6 +151,30 @@ duplicate notification if a provider accepted an earlier timed-out request.
 Ticket pages remain available even if message delivery fails. Treat ticket and
 order URLs as private: possession grants access to tickets still held by the buyer.
 
+### Meta WhatsApp Ticket Images
+
+Set `WHATSAPP_DRIVER=meta`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_ACCESS_TOKEN`,
+`WHATSAPP_GRAPH_API_VERSION`, `WHATSAPP_TEMPLATE_NAME`, and `WHATSAPP_TEMPLATE_LANGUAGE`
+in the private environment file after Meta approves the template. The
+`golden_event_ticket` utility template has an IMAGE header and a fixed confirmation
+body, without body variables or buttons. Buyers explicitly opt in at checkout.
+Each valid, unclaimed, unused ticket is rendered as a private PNG in memory,
+uploaded to Meta, and sent in a separate template message using the media ID.
+The PNG includes event artwork, event details, QR and manual admission code.
+`GET /api/tickets/:token/image` provides the same PNG through a private bearer URL
+with no caching. No admission images are placed in public uploads.
+
+Meta approval is checked once a minute while sending queued messages. Pending
+review holds messages without consuming retries; sending starts after approval.
+Meta sending operates independently of `DELIVERY_DRIVER`, so SMS/email can stay
+in outbox mode. Existing outbox records are not automatically replayed. Per-ticket
+provider acknowledgements persist across retries, preventing acknowledged tickets
+from being resent when a later ticket fails. An ambiguous timeout or crash after
+Meta accepts a message can still cause a duplicate on retry. `sent` means accepted
+by Meta, not confirmed delivery or read; delivery-status webhooks are not connected.
+The webhook verify token is not needed for outbound sending. Ticket handover still
+requires separately configured verification SMS.
+
 ## Buy Together, Arrive Separately
 
 Buy four tickets in one checkout, keep your own, and use the send icon beside each

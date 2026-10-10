@@ -1,5 +1,6 @@
 import { statfsSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
+import { metaWhatsAppConfigured } from './whatsapp.js';
 
 const bad = (status) => ['down', 'degraded'].includes(status);
 export function overallHealth(components) {
@@ -122,13 +123,14 @@ export function createHealthMonitor(db, config, options = {}) {
   function delivery(channel, label) {
     const twilio = !!(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN);
     const configured =
-      config.deliveryDriver === 'live' &&
-      (channel === 'email'
-        ? !!(process.env.SMTP_HOST && process.env.SMTP_FROM)
-        : channel === 'sms'
-          ? twilio && !!process.env.TWILIO_SMS_FROM
-          : twilio &&
-            !!(process.env.TWILIO_WHATSAPP_FROM && process.env.TWILIO_WHATSAPP_CONTENT_SID));
+      (channel === 'whatsapp' && metaWhatsAppConfigured()) ||
+      (config.deliveryDriver === 'live' &&
+        (channel === 'email'
+          ? !!(process.env.SMTP_HOST && process.env.SMTP_FROM)
+          : channel === 'sms'
+            ? twilio && !!process.env.TWILIO_SMS_FROM
+            : twilio &&
+              !!(process.env.TWILIO_WHATSAPP_FROM && process.env.TWILIO_WHATSAPP_CONTENT_SID)));
     if (!configured)
       return component(channel, label, 'not_configured', 'Automatic delivery is not configured.');
     if (database().status !== 'operational')

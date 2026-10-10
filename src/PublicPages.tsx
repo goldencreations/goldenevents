@@ -584,9 +584,11 @@ export function OrderContent({ token, onRetry }: { token: string; onRetry?: () =
           <TicketDistribution orderToken={token} tickets={tickets} refresh={load} />
           <div className="ticket-confirmation-note">
             <Smartphone size={15} />
-            {config.deliveryDriver === 'outbox'
+            {config.deliveryDriver === 'outbox' && config.whatsappDriver !== 'meta'
               ? 'Ticket messages saved in the demo outbox.'
-              : 'Your ticket messages have been queued for delivery.'}
+              : config.whatsappDriver === 'meta'
+                ? 'Your tickets are ready. WhatsApp delivery is queued if you selected it.'
+                : 'Your ticket messages have been queued for delivery.'}
           </div>
         </>
       ) : (

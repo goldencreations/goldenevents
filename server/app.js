@@ -5,6 +5,7 @@ import cookieParser from 'cookie-parser';
 import multer from 'multer';
 import sharp from 'sharp';
 import QRCode from 'qrcode';
+import { renderTicketImage } from './ticket-image.js';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { mkdirSync, existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -170,6 +171,7 @@ export function createApp(db, config, health = createHealthMonitor(db, config)) 
       publicOrigin: config.publicOrigin,
       paymentDriver: config.paymentDriver,
       deliveryDriver: config.deliveryDriver,
+      whatsappDriver: process.env.WHATSAPP_DRIVER || 'twilio',
       ticketSharing: sharingMode(config),
       demo: config.seedDemo && !config.production,
     }),
@@ -453,6 +455,21 @@ export function createApp(db, config, health = createHealthMonitor(db, config)) 
       'INSERT OR IGNORE INTO webhook_jobs (id,transaction_id,reference,provider) VALUES (?,?,?,?)',
     ).run(`ecofy:${payment.id}:${payment.status}`, payment.id, payment.reference, 'ecofy');
     res.json({ ok: true });
+  });
+  app.get('/api/tickets/:token/image', async (req, res) => {
+    const ticket = db
+      .prepare(
+        `SELECT t.*,tt.name AS ticket_type FROM tickets t
+      JOIN orders o ON o.id=t.order_id JOIN ticket_types tt ON tt.id=o.ticket_type_id
+      JOIN events e ON e.id=t.event_id WHERE t.token=? AND o.status='paid' AND e.status!='cancelled'`,
+      )
+      .get(req.params.token);
+    if (!ticket) throw new HttpError(404, 'Valid ticket not found.');
+    const event = db.prepare('SELECT * FROM events WHERE id=?').get(ticket.event_id);
+    res
+      .type('png')
+      .set('Content-Disposition', `attachment; filename="${ticket.code}-ticket.png"`)
+      .send(await renderTicketImage(event, ticket, config));
   });
   app.get('/api/tickets/:token', async (req, res) => {
     const ticket = db

@@ -1,4 +1,5 @@
 import nodemailer from 'nodemailer';
+import { sendMetaTickets, metaTemplateReady } from './whatsapp.js';
 import { completeOrder, HttpError } from './domain.js';
 import { initiateEcofy, verifyEcofy, processEcofyPayments } from './ecofy.js';
 
@@ -103,12 +104,19 @@ export async function processDeliveries(db, config) {
     )
     .all(Date.now());
   for (const row of rows) {
-    if (config.deliveryDriver === 'outbox') {
+    const meta = row.channel === 'whatsapp' && process.env.WHATSAPP_DRIVER === 'meta';
+    if (config.deliveryDriver === 'outbox' && !meta) {
       db.prepare("UPDATE deliveries SET status='outbox',error=NULL WHERE id=?").run(row.id);
       continue;
     }
     try {
-      if (row.channel === 'email') {
+      if (meta) {
+        if (!(await metaTemplateReady())) continue;
+        if (!(await sendMetaTickets(db, row, config))) {
+          db.prepare("UPDATE deliveries SET status='skipped',error=NULL WHERE id=?").run(row.id);
+          continue;
+        }
+      } else if (row.channel === 'email') {
         if (!process.env.SMTP_HOST) throw new Error('Email delivery is not configured.');
         const smtp = nodemailer.createTransport({
           host: process.env.SMTP_HOST,
