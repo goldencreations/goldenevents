@@ -9,7 +9,7 @@ const AuthPage = lazy(() => import('./AuthPage').then((m) => ({ default: m.AuthP
 const Dashboard = lazy(() => import('./Dashboard').then((m) => ({ default: m.Dashboard })));
 const EventEditor = lazy(() => import('./EventEditor').then((m) => ({ default: m.EventEditor })));
 const Scanner = lazy(() => import('./Scanner').then((m) => ({ default: m.Scanner })));
-const Explore = lazy(() => import('./PublicPages').then((m) => ({ default: m.Explore })));
+const Explore = lazy(() => import('./LandingPage').then((m) => ({ default: m.Explore })));
 const EventPage = lazy(() => import('./PublicPages').then((m) => ({ default: m.EventPage })));
 const OrderPage = lazy(() => import('./PublicPages').then((m) => ({ default: m.OrderPage })));
 const TicketPage = lazy(() => import('./PublicPages').then((m) => ({ default: m.TicketPage })));

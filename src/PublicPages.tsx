@@ -13,7 +13,6 @@ import {
   Check,
   ShieldCheck,
   Loader2,
-  Search,
   Ticket,
   Download,
   Printer,
@@ -23,7 +22,7 @@ import {
 } from 'lucide-react';
 import { api, send, ApiError, money, dateLabel, timeLabel, shortPhone } from './api';
 import { useApp } from './context';
-import { Brand, Spinner, ErrorBox, Status, Empty, EventCard, EventImage } from './ui';
+import { Brand, Spinner, ErrorBox, Status, EventImage } from './ui';
 import type { Event, Order, BookingTicket } from './types';
 import { saveTicketImage } from './saveTicket';
 import { TicketDistribution } from './TicketSharing';
@@ -58,74 +57,6 @@ export function PublicFooter() {
     </footer>
   );
 }
-export function Explore() {
-  const [events, setEvents] = useState<Event[]>([]),
-    [loading, setLoading] = useState(true),
-    [error, setError] = useState(''),
-    [query, setQuery] = useState(''),
-    [category, setCategory] = useState('All');
-  useEffect(() => {
-    api<{ events: Event[] }>('/events')
-      .then((d) => setEvents(d.events))
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
-  }, []);
-  const filtered = events.filter(
-    (e) =>
-      (category === 'All' || e.category === category) &&
-      `${e.name} ${e.city} ${e.venue}`.toLowerCase().includes(query.toLowerCase()),
-  );
-  return (
-    <div className="public-page">
-      <PublicHeader />
-      <main className="explore-main">
-        <div className="explore-heading">
-          <div>
-            <span className="eyebrow">DAR ES SALAAM & BEYOND</span>
-            <h1>Find your next moment.</h1>
-          </div>
-          <div className="explore-search">
-            <Search size={19} />
-            <input
-              aria-label="Search public events"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Event, venue, or city"
-            />
-          </div>
-        </div>
-        <div className="tabs explore-tabs" role="tablist" aria-label="Event category">
-          {['All', 'Music', 'Nightlife', 'Community', 'Business', 'Arts', 'Sports'].map((c) => (
-            <button
-              key={c}
-              role="tab"
-              aria-selected={category === c}
-              className={category === c ? 'active' : ''}
-              onClick={() => setCategory(c)}
-            >
-              {c === 'All' ? 'All events' : c}
-            </button>
-          ))}
-        </div>
-        {loading ? (
-          <Spinner />
-        ) : error ? (
-          <ErrorBox>{error}</ErrorBox>
-        ) : filtered.length ? (
-          <div className="event-grid public-event-grid">
-            {filtered.map((e) => (
-              <EventCard key={e.id} event={e} />
-            ))}
-          </div>
-        ) : (
-          <Empty title="No events found" />
-        )}
-      </main>
-      <PublicFooter />
-    </div>
-  );
-}
-
 export function EventPage({ hostSlug }: { hostSlug?: string }) {
   const params = useParams(),
     slug = hostSlug || params.slug,

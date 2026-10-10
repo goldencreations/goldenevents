@@ -109,7 +109,7 @@ export function Shell({ children, title = 'Overview' }: { children: ReactNode; t
       )}
       <aside className={`sidebar ${open ? 'is-open' : ''}`}>
         <Link to="/dashboard" className="sidebar-brand">
-          <Brand />
+          <Brand ticketLogo />
         </Link>
         <div className="workspace-selector">
           <span className="workspace-avatar">
@@ -425,12 +425,15 @@ function SalesChart({ stats }: { stats: Stats }) {
           <span>0</span>
         </div>
         <div className="chart-bars">
-          {stats.chart.map((day) => (
+            {stats.chart.map((day, index) => (
             <div className="chart-column" key={day.date}>
               <div className="bar-track">
                 <div
                   className="chart-bar"
-                  style={{ height: `${Math.max(2, (day.revenue / max) * 100)}%` }}
+                    style={{
+                      height: `${Math.max(2, (day.revenue / max) * 100)}%`,
+                      animationDelay: `${120 + index * 75}ms`,
+                    }}
                   title={`TZS ${money(day.revenue)} · ${day.tickets} tickets`}
                 />
               </div>

@@ -37,7 +37,7 @@ export function AuthPage({ register = false }: { register?: boolean }) {
     <div className="auth-page">
       <div className="auth-main">
         <Link to="/">
-          <Brand />
+          <Brand ticketLogo />
         </Link>
         <div className="auth-form">
           <span className="eyebrow">THE ORGANIZER WORKSPACE</span>

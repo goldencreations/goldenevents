@@ -4,7 +4,22 @@ import { Link } from 'react-router-dom';
 import { dateLabel, money } from './api';
 import type { Event } from './types';
 
-export function Brand({ light = false }: { light?: boolean }) {
+export function Brand({ light = false, ticketLogo = false }: {
+  light?: boolean;
+  ticketLogo?: boolean;
+}) {
+  if (ticketLogo) {
+    return (
+      <span className={`brand brand-ticket-logo ${light ? 'brand-light' : ''}`}>
+        <img src="/assets/golden-ticket-symbol.png" alt="" />
+        <span className="brand-wordmark">
+          <span className="brand-wordmark-name">Golden</span>
+          <small>events</small>
+        </span>
+      </span>
+    );
+  }
+
   return (
     <span className={`brand ${light ? 'brand-light' : ''}`}>
       <span className="brand-mark">

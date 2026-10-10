@@ -523,6 +523,43 @@ small {
 .brand-light .brand-dot {
   color: var(--yellow);
 }
+.brand-ticket-logo {
+  gap: 8px;
+}
+.brand-ticket-logo > img {
+  display: block;
+  width: 36px;
+  height: 36px;
+  object-fit: contain;
+}
+.brand-ticket-logo .brand-wordmark {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+.brand-ticket-logo .brand-wordmark-name {
+  color: #171715;
+  font-family: 'DM Sans Variable', 'DM Sans', sans-serif;
+  font-size: 25px;
+  font-weight: 800;
+  letter-spacing: -1.3px;
+  line-height: 1;
+}
+.brand-ticket-logo .brand-wordmark small {
+  margin-top: 2px;
+  color: #818181;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  line-height: 1;
+  text-transform: lowercase;
+}
+.brand-ticket-logo.brand-light .brand-wordmark-name {
+  color: #fff;
+}
+.brand-ticket-logo.brand-light .brand-wordmark small {
+  color: #d1d1d1;
+}
 .loading {
   min-height: 180px;
   display: flex;
@@ -728,8 +765,28 @@ small {
 
 /* The workspace uses unframed sections; only repeated event items are cards. */
 .workspace {
+  --green: #c34b23;
+  --green-dark: #a63b1b;
+  --muted: #81786f;
+  --line: #eee5dd;
+  --yellow: #f4d978;
+  --mint: #e8f5c9;
+  --peach: #fff0e7;
+  background: #fcfcfa;
   display: flex;
   min-height: 100vh;
+}
+.workspace :is(button, a):focus-visible {
+  outline-color: #f7a47c;
+}
+.workspace input:focus,
+.workspace textarea:focus,
+.workspace select:focus,
+.workspace .phone-input:focus-within {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 9%, transparent);
+}
+.workspace .toast {
+  background: #282521;
 }
 .sidebar {
   width: 230px;
@@ -1077,6 +1134,17 @@ small {
   border-top: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
   padding: 23px 25px 19px;
+  animation: sales-chart-reveal 560ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes sales-chart-reveal {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 12px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
 }
 .section-heading {
   display: flex;
@@ -1155,12 +1223,20 @@ small {
   width: 100%;
 }
 .chart-bar {
-  background: #97d2b9;
+  background: #f4b08d;
   width: 28px;
   max-width: 70%;
   border-radius: 3px 3px 0 0;
   min-height: 3px;
   transition: height 0.35s;
+  transform: scaleY(0.04);
+  transform-origin: center bottom;
+  animation: sales-bar-reveal 780ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
+}
+@keyframes sales-bar-reveal {
+  to {
+    transform: scaleY(1);
+  }
 }
 .chart-column:nth-child(4) .chart-bar,
 .chart-column:nth-child(7) .chart-bar {
@@ -2830,15 +2906,21 @@ tbody tr:hover {
 
 .auth-page {
   min-height: 100vh;
-  background: white;
+  background: #fcfcfa;
   display: grid;
   grid-template-columns: 1fr 1fr;
+  color: #171715;
+  --auth-orange: #f47745;
+  --auth-ink: #171715;
+  --auth-muted: #6d6b65;
 }
 .auth-main {
   display: flex;
   flex-direction: column;
   padding: 40px 10%;
   min-width: 0;
+  background: #fcfcfa;
+  color: #171715;
 }
 .auth-form {
   margin: auto 0;
@@ -2853,8 +2935,34 @@ tbody tr:hover {
 }
 .auth-form > p {
   font-size: 13px;
-  color: #93a185;
+  color: var(--auth-muted);
   margin-bottom: 28px;
+}
+.auth-page .eyebrow,
+.auth-page .auth-switch a {
+  color: var(--auth-orange);
+}
+.auth-page .button.primary {
+  background: var(--auth-orange);
+  color: #fff;
+}
+.auth-page .button.primary:hover:not(:disabled) {
+  background: #dc5f32;
+}
+.auth-page .button.secondary {
+  border-color: #dedbd5;
+  color: var(--auth-ink);
+  background: #fff;
+}
+.auth-page .button.secondary:hover:not(:disabled) {
+  background: #f5f1eb;
+}
+.auth-page .password-input:focus-within {
+  border-color: var(--auth-orange);
+}
+.auth-page .icon-button:hover {
+  background: #fff0e7;
+  color: var(--auth-orange);
 }
 .auth-form .button {
   min-height: 46px;
@@ -2872,7 +2980,7 @@ tbody tr:hover {
 }
 .auth-footer {
   font-size: 10px;
-  color: #b0b8a7;
+  color: #8d8980;
 }
 .password-input {
   display: flex;
@@ -2892,7 +3000,7 @@ tbody tr:hover {
 .auth-photo {
   position: relative;
   min-height: 100vh;
-  background: #374936;
+  background: #292521;
   overflow: hidden;
 }
 .auth-photo img {
@@ -2906,7 +3014,7 @@ tbody tr:hover {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(transparent 40%, #142b1ee0);
+  background: linear-gradient(180deg, #17171524 20%, #171715e8 100%);
 }
 .auth-photo > div {
   position: absolute;
@@ -2917,7 +3025,7 @@ tbody tr:hover {
   color: white;
 }
 .auth-photo .eyebrow {
-  color: #efdb91;
+  color: #ffb184;
   font-size: 10px;
 }
 .auth-photo h2 {
@@ -2930,7 +3038,7 @@ tbody tr:hover {
   display: block;
   margin-top: 20px;
   font-size: 12px;
-  color: #c4d0b7;
+  color: #f0d7c8;
 }
 .scanner-layout {
   display: grid;
