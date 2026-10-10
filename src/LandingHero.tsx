@@ -177,6 +177,9 @@ function HeroShowcase({ browse }: Pick<HeroProps, 'browse'>) {
 
 export function LandingHero({ workspaceUrl, browse }: HeroProps) {
   const [headlineIndex, setHeadlineIndex] = useState(0);
+  const [wordWindowWidth, setWordWindowWidth] = useState<number>();
+  const wordWindowRef = useRef<HTMLSpanElement>(null);
+  const wordRefs = useRef<Array<HTMLSpanElement | null>>([]);
 
   useEffect(() => {
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
@@ -185,6 +188,24 @@ export function LandingHero({ workspaceUrl, browse }: HeroProps) {
     }, 2600);
     return () => window.clearInterval(interval);
   }, []);
+
+  useLayoutEffect(() => {
+    const windowElement = wordWindowRef.current;
+    const activeWord = wordRefs.current[headlineIndex];
+    if (!windowElement || !activeWord) return;
+
+    const measure = () => {
+      const style = window.getComputedStyle(windowElement);
+      const padding = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
+      setWordWindowWidth(Math.ceil(activeWord.getBoundingClientRect().width + padding));
+    };
+
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(activeWord);
+    return () => observer.disconnect();
+  }, [headlineIndex]);
 
   return (
     <div className="landing-opening-chapter">
@@ -201,15 +222,19 @@ export function LandingHero({ workspaceUrl, browse }: HeroProps) {
             <span className="sr-only">Great stories</span>
             <span className="hero-headline-visual" aria-hidden="true">
               Great
-              <span className="hero-word-window">
+              <span
+                className="hero-word-window"
+                ref={wordWindowRef}
+                style={wordWindowWidth ? { width: `${wordWindowWidth}px` } : undefined}
+              >
                 <span
                   className="hero-word-track"
                   style={{ transform: `translateY(-${headlineIndex * 1.08}em)` }}
                 >
-                  <span>
+                  <span ref={(element) => { wordRefs.current[0] = element; }}>
                     stories <i>✨</i>
                   </span>
-                  <span>
+                  <span ref={(element) => { wordRefs.current[1] = element; }}>
                     times <i>🎉</i>
                   </span>
                 </span>

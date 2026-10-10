@@ -135,12 +135,12 @@
   display: inline-block;
   overflow: hidden;
   height: 1.08em;
-  min-width: 3.8em;
   padding: 0 0.12em;
   border-radius: 0.16em;
   background: #c8f2a6;
   vertical-align: bottom;
   text-align: left;
+  transition: width 500ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 .hero-word-track {
   display: flex;
@@ -149,6 +149,7 @@
 }
 .hero-word-track > span {
   display: flex;
+  align-self: flex-start;
   align-items: center;
   height: 1.08em;
   flex: 0 0 1.08em;

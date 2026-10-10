@@ -45,7 +45,20 @@ export async function renderTicketImage(event, ticket, config) {
   });
   const text = (value, x, y, size, extra = '') =>
     `<text x="${x}" y="${y}" font-size="${size}" ${extra}>${escape(value)}</text>`;
-  const svg = `<svg width="800" height="1280" xmlns="http://www.w3.org/2000/svg"><rect width="800" height="1280" fill="white"/><rect width="800" height="260" fill="#147d65"/><g font-family="sans-serif" fill="#202924">${text('golden.', 48, 318, 30, 'fill="#147d65" font-weight="bold"')}${text(ticket.ticket_type, 48, 355, 20)}${title.map((line, i) => text(line, 48, 414 + i * (titleSize + 8), titleSize)).join('')}${text(date + ' EAT', 48, 581, 22)}${venue.map((line, i) => text(line, 48, 621 + i * (venueSize + 4), venueSize)).join('')}<path d="M0 710H800" stroke="#dfe5e1" stroke-dasharray="7 7"/>${text(ticket.code, 400, 1120, 24, 'text-anchor="middle" font-family="monospace"')}${text('Valid for one admission', 400, 1160, 20, 'text-anchor="middle"')}${text(ticket.holder_name || '', 400, 1190, 18, 'text-anchor="middle"')}${text('Golden Creation', 400, 1230, 18, 'text-anchor="middle"')}</g></svg>`;
+  let ticketSymbol = '';
+  try {
+    const logoPath = path.resolve(
+      config.production ? 'dist' : 'public',
+      'assets/golden-ticket-symbol.png',
+    );
+    ticketSymbol = `data:image/png;base64,${(await readFile(logoPath)).toString('base64')}`;
+  } catch {
+    /* The wordmark remains readable if the optional symbol asset is unavailable. */
+  }
+  const logo = ticketSymbol
+    ? `<image href="${ticketSymbol}" x="48" y="274" width="44" height="44"/>`
+    : '';
+  const svg = `<svg width="800" height="1280" xmlns="http://www.w3.org/2000/svg"><rect width="800" height="1280" fill="#fcfaf7"/><rect width="800" height="260" fill="#ffad82"/><g font-family="sans-serif" fill="#282521">${logo}${text('Golden', 103, 307, 30, 'fill="#171715" font-weight="bold"')}${text('events', 104, 326, 11, 'fill="#818181" font-weight="bold"')}${text(ticket.ticket_type, 48, 365, 20, 'fill="#716b64"')}${title.map((line, i) => text(line, 48, 414 + i * (titleSize + 8), titleSize)).join('')}${text(date + ' EAT', 48, 581, 22)}${venue.map((line, i) => text(line, 48, 621 + i * (venueSize + 4), venueSize)).join('')}<path d="M0 710H800" stroke="#eee5dd" stroke-dasharray="7 7"/>${text(ticket.code, 400, 1120, 24, 'text-anchor="middle" font-family="monospace"')}${text('Valid for one admission', 400, 1160, 20, 'text-anchor="middle"')}${text(ticket.holder_name || '', 400, 1190, 18, 'text-anchor="middle"')}${text('Golden Creation', 400, 1230, 18, 'text-anchor="middle"')}</g></svg>`;
   const layers = [];
   let coverPath;
   if (/^\/uploads\/[a-zA-Z0-9_-]+\.(webp|png|jpg|jpeg)$/.test(event.image || ''))

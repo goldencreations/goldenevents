@@ -2184,10 +2184,27 @@ tbody tr:hover {
 
 /* The public event page shows the actual event and a compact checkout. */
 .public-page {
-  background: #fafbf9;
+  --green: #c34b23;
+  --green-dark: #a63b1b;
+  --yellow: #f4d978;
+  --mint: #e8f5c9;
+  --peach: #fff0e7;
+  --line: #eee5dd;
+  --muted: #81786f;
+  color: #282521;
+  background: #fcfaf7;
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+}
+.public-page :is(button, a):focus-visible {
+  outline-color: #f7a47c;
+}
+.public-page :is(input, textarea, select):focus {
+  box-shadow: 0 0 0 3px #c34b2318;
+}
+.public-page .toast {
+  background: #282521;
 }
 .public-header {
   height: 88px;
@@ -2204,10 +2221,13 @@ tbody tr:hover {
   align-items: center;
   gap: 28px;
   font-size: 12px;
-  color: #71826b;
+  color: #716b64;
 }
 .public-header .brand small {
   display: none;
+}
+.public-header .brand-ticket-logo .brand-wordmark small {
+  display: block;
 }
 .public-header .brand > span:last-child {
   line-height: 30px;
@@ -2219,14 +2239,14 @@ tbody tr:hover {
   padding: 35px 5%;
   border-top: 1px solid var(--line);
   font-size: 10px;
-  color: #a3b09a;
+  color: #85817a;
   margin-top: auto;
   gap: 20px;
 }
 .public-footer .brand {
   transform: scale(0.7);
   transform-origin: left center;
-  width: 95px;
+  width: auto;
 }
 .explore-main {
   max-width: 1240px;
@@ -2306,8 +2326,8 @@ tbody tr:hover {
   margin: 26px 0 12px;
 }
 .category-label {
-  background: #edf4e9;
-  color: #7b956a;
+  background: #fff0e7;
+  color: #a63b1b;
   font-size: 10px;
   font-weight: 600;
   padding: 6px 10px;
@@ -2334,8 +2354,8 @@ tbody tr:hover {
 .fact-icon {
   width: 44px;
   height: 44px;
-  background: #eaf4e4;
-  color: #7b9a63;
+  background: #e8f5c9;
+  color: #69803b;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2354,7 +2374,7 @@ tbody tr:hover {
 }
 .event-facts small {
   display: block;
-  color: #9fac93;
+  color: #81786f;
   font-size: 11px;
   margin-top: 6px;
 }
@@ -2363,7 +2383,7 @@ tbody tr:hover {
 }
 .public-about p {
   font-size: 14px;
-  color: #809075;
+  color: #716b64;
   margin-top: 15px;
   line-height: 1.85;
   white-space: pre-line;
@@ -2389,13 +2409,13 @@ tbody tr:hover {
 }
 .event-hosted > span:nth-child(2) {
   font-size: 10px;
-  color: #a7b09c;
+  color: #81786f;
   flex: 1;
 }
 .event-hosted strong {
   display: block;
   font-size: 12px;
-  color: #5c7850;
+  color: #a63b1b;
   font-weight: 600;
   margin-top: 3px;
 }
@@ -2405,18 +2425,18 @@ tbody tr:hover {
 }
 .checkout {
   background: white;
-  border: 1px solid #e1e9da;
+  border: 1px solid #eee5dd;
   border-radius: 8px;
   padding: 30px;
-  box-shadow: 0 8px 30px #39543105;
+  box-shadow: 0 8px 30px #77351b0b;
 }
 .checkout-heading {
   text-align: center;
   padding-bottom: 25px;
 }
 .checkout-icon {
-  background: #fff3d3;
-  color: #a99144;
+  background: #fff0e7;
+  color: #a63b1b;
   width: 42px;
   height: 42px;
   display: inline-flex;
@@ -2430,7 +2450,7 @@ tbody tr:hover {
 }
 .checkout-heading p {
   font-size: 12px;
-  color: #a2ad99;
+  color: #81786f;
   margin-top: 6px;
 }
 .ticket-options {
@@ -2442,7 +2462,7 @@ tbody tr:hover {
   display: flex;
   align-items: center;
   gap: 10px;
-  border: 1px solid #e2e8dc;
+  border: 1px solid #eee5dd;
   border-radius: 6px;
   padding: 14px 12px;
   margin-bottom: 10px;
@@ -2451,7 +2471,7 @@ tbody tr:hover {
 }
 .ticket-option.selected {
   border-color: var(--green);
-  background: #f5faf3;
+  background: #fff7f1;
 }
 .ticket-option.sold-out {
   opacity: 0.55;
@@ -2473,7 +2493,7 @@ tbody tr:hover {
 .ticket-option small {
   display: block;
   font-size: 9px;
-  color: #a0ac95;
+  color: #81786f;
   margin-top: 4px;
   font-weight: 400;
 }
@@ -2491,7 +2511,7 @@ tbody tr:hover {
 .quantity-row label {
   margin: 0;
   font-size: 12px;
-  color: #768c68;
+  color: #716b64;
 }
 .stepper {
   display: flex;
@@ -2509,7 +2529,7 @@ tbody tr:hover {
   justify-content: center;
   background: white;
   border-radius: 5px;
-  color: #768c68;
+  color: #716b64;
 }
 .stepper output {
   width: 33px;
@@ -2625,7 +2645,7 @@ tbody tr:hover {
   justify-content: center;
   gap: 5px;
   font-size: 9px;
-  color: #a2b098;
+  color: #81786f;
   text-align: center;
   margin-top: 15px;
   line-height: 1.5;
@@ -2638,11 +2658,24 @@ tbody tr:hover {
   justify-content: center;
   align-items: center;
   font-size: 9px;
-  color: #b0b9a8;
+  color: #81786f;
   gap: 9px;
 }
 .checkout-powered .brand {
   gap: 4px;
+}
+.checkout-powered .brand-ticket-logo > img {
+  width: 22px;
+  height: 22px;
+}
+.checkout-powered .brand-ticket-logo .brand-wordmark-name {
+  font-size: 15px;
+  letter-spacing: -0.6px;
+}
+.checkout-powered .brand-ticket-logo .brand-wordmark small {
+  display: block;
+  font-size: 5px;
+  margin-top: 1px;
 }
 .checkout-powered .brand-mark {
   width: 18px;
@@ -2680,8 +2713,8 @@ tbody tr:hover {
   width: 70px;
   height: 70px;
   border-radius: 50%;
-  background: #e9f4e4;
-  color: #6b9f51;
+  background: #fff0e7;
+  color: #c34b23;
   margin: 10px 0 20px;
 }
 .payment-waiting h2,
@@ -2689,7 +2722,7 @@ tbody tr:hover {
   font-size: 25px;
 }
 .payment-waiting > p {
-  color: #8b9d7c;
+  color: #716b64;
   font-size: 13px;
   margin: 10px 0;
 }
@@ -2705,7 +2738,7 @@ tbody tr:hover {
   align-items: center;
   justify-content: center;
   font-size: 11px;
-  color: #a3b097;
+  color: #81786f;
   margin-top: 13px;
 }
 .demo-payment {
@@ -2716,7 +2749,7 @@ tbody tr:hover {
 .demo-payment .eyebrow {
   display: block;
   margin-bottom: 17px;
-  color: #a69764;
+  color: #c34b23;
 }
 .demo-payment .text-link {
   margin-top: 15px;
@@ -2724,7 +2757,7 @@ tbody tr:hover {
 }
 .demo-payment small {
   display: block;
-  color: #a8b09e;
+  color: #81786f;
   font-size: 9px;
   margin-top: 14px;
 }
@@ -2741,7 +2774,7 @@ tbody tr:hover {
 }
 .payment-ended p {
   font-size: 13px;
-  color: #8c9b7f;
+  color: #716b64;
   margin: 15px 0 25px;
 }
 .paid-heading {
@@ -2764,12 +2797,12 @@ tbody tr:hover {
 }
 .golden-ticket {
   background: white;
-  border: 1px solid #e0e8d9;
+  border: 1px solid #eee5dd;
   border-radius: 8px;
   overflow: hidden;
   max-width: 420px;
   width: 100%;
-  box-shadow: 0 8px 25px #20372b08;
+  box-shadow: 0 8px 25px #77351b0b;
 }
 .golden-ticket + .golden-ticket {
   margin-top: 22px;
@@ -2816,7 +2849,7 @@ tbody tr:hover {
   align-items: center;
   gap: 8px;
   font-size: 10px;
-  color: #92a283;
+  color: #716b64;
   margin: 8px 0;
   line-height: 1.5;
 }
@@ -2824,9 +2857,26 @@ tbody tr:hover {
   min-width: 0;
   overflow-wrap: anywhere;
 }
+.ticket-info > .ticket-brand-lockup {
+  justify-content: flex-end;
+  border-top: 1px solid #eee5dd;
+  padding-top: 12px;
+  margin-top: 15px;
+}
+.ticket-brand-lockup .brand-ticket-logo > img {
+  width: 27px;
+  height: 27px;
+}
+.ticket-brand-lockup .brand-wordmark-name {
+  font-size: 17px;
+  letter-spacing: -0.7px;
+}
+.ticket-brand-lockup .brand-wordmark small {
+  font-size: 6px;
+}
 .ticket-perforation {
   position: relative;
-  border-top: 1px dashed #d5e1cb;
+  border-top: 1px dashed #f0cbb6;
   margin: 5px 0;
 }
 .ticket-perforation:before,
@@ -2835,8 +2885,8 @@ tbody tr:hover {
   position: absolute;
   width: 20px;
   height: 20px;
-  background: #fafbf9;
-  border: 1px solid #e0e8d9;
+  background: #fcfaf7;
+  border: 1px solid #eee5dd;
   border-radius: 50%;
   top: -10px;
 }
@@ -2858,7 +2908,8 @@ tbody tr:hover {
   height: 190px;
 }
 .ticket-qr strong {
-  color: #4a693d;
+  background: #fff0e7;
+  color: #a63b1b;
   font-size: 13px;
 }
 .ticket-qr > span {

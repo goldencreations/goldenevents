@@ -32,7 +32,7 @@ export function PublicHeader() {
   return (
     <header className="public-header">
       <a href={config.publicOrigin}>
-        <Brand />
+          <Brand ticketLogo />
       </a>
       <nav>
         <a href={config.publicOrigin}>Explore events</a>
@@ -51,7 +51,7 @@ export function PublicFooter() {
   const { config } = useApp();
   return (
     <footer className="public-footer">
-      <Brand />
+      <Brand ticketLogo />
       <span>© {new Date().getFullYear()} Golden Creation</span>
       <a href={`${config.publicOrigin}/status`}>System status</a>
     </footer>
@@ -390,7 +390,7 @@ export function EventPage({ hostSlug }: { hostSlug?: string }) {
                     </form>
                   )}
                   <div className="checkout-powered">
-                    Powered by <Brand />
+                    Powered by <Brand ticketLogo />
                   </div>
                 </div>
               )}
@@ -634,6 +634,9 @@ export function TicketContent({ token, compact = false }: { token: string; compa
           <span>
             {event.venue}, {event.city}
           </span>
+        </div>
+        <div className="ticket-brand-lockup">
+          <Brand ticketLogo />
         </div>
       </div>
       <div className="ticket-perforation" />

@@ -44,11 +44,12 @@ export async function saveTicketImage(
   qr: string,
 ) {
   await document.fonts.ready;
-  const [qrImage, cover] = await Promise.all([
+  const [qrImage, cover, logo] = await Promise.all([
     loadImage(qr),
     event.image
       ? loadImage(eventImageSource(event.image)).catch(() => null)
       : Promise.resolve(null),
+    loadImage('/assets/golden-ticket-symbol.png'),
   ]);
   const canvas = document.createElement('canvas');
   canvas.width = 800;
@@ -57,7 +58,7 @@ export async function saveTicketImage(
   if (!ctx) throw new Error('Saving tickets is unavailable in this browser.');
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, 800, 1280);
-  ctx.fillStyle = '#147d65';
+  ctx.fillStyle = '#ffad82';
   ctx.fillRect(0, 0, 800, 260);
   if (cover) {
     const scale = Math.max(800 / cover.naturalWidth, 260 / cover.naturalHeight);
@@ -70,12 +71,16 @@ export async function saveTicketImage(
     ctx.drawImage(cover, (800 - width) / 2, (260 - height) / 2, width, height);
     ctx.restore();
   }
-  ctx.fillStyle = '#147d65';
-  ctx.font = '700 30px "DM Sans Variable", sans-serif';
-  ctx.fillText('golden.', 48, 318);
-  ctx.fillStyle = '#858d87';
+  ctx.drawImage(logo, 48, 274, 44, 44);
+  ctx.fillStyle = '#171715';
+  ctx.font = '800 30px "DM Sans Variable", sans-serif';
+  ctx.fillText('Golden', 103, 307);
+  ctx.fillStyle = '#818181';
+  ctx.font = '700 11px "DM Sans Variable", sans-serif';
+  ctx.fillText('events', 104, 326);
+  ctx.fillStyle = '#716b64';
   ctx.font = '500 18px "DM Sans Variable", sans-serif';
-  ctx.fillText(ticket.ticket_type, 48, 355);
+  ctx.fillText(ticket.ticket_type, 48, 365);
   let size = 42,
     titleLines: string[] = [];
   do {
@@ -88,7 +93,7 @@ export async function saveTicketImage(
   titleLines.forEach((line, i) => ctx.fillText(line, 48, 414 + i * (size + 9)));
   ctx.font = '500 22px "DM Sans Variable", sans-serif';
   ctx.fillText(`${dateLabel(event.starts_at)} · ${timeLabel(event.starts_at)} EAT`, 48, 581);
-  ctx.fillStyle = '#7c837f';
+  ctx.fillStyle = '#716b64';
   let venueSize = 21,
     venueLines: string[] = [];
   do {
@@ -98,7 +103,7 @@ export async function saveTicketImage(
     venueSize -= 1;
   } while (venueSize >= 14);
   venueLines.forEach((line, i) => ctx.fillText(line, 48, 621 + i * (venueSize + 6)));
-  ctx.strokeStyle = '#dfe5e1';
+  ctx.strokeStyle = '#eee5dd';
   ctx.setLineDash([7, 7]);
   ctx.beginPath();
   ctx.moveTo(0, 700);
@@ -111,7 +116,7 @@ export async function saveTicketImage(
   ctx.fillStyle = '#202924';
   ctx.font = '500 21px monospace';
   ctx.fillText(ticket.code, 400, 1117);
-  ctx.fillStyle = '#7c837f';
+  ctx.fillStyle = '#81786f';
   ctx.font = '400 18px "DM Sans Variable", sans-serif';
   ctx.fillText(
     ticket.checked_in_at
