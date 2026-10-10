@@ -1,6 +1,7 @@
 services:
   events:
     build: .
+    image: goldenevents:${IMAGE_TAG:-latest}
     restart: unless-stopped
     init: true
     env_file: .env.production

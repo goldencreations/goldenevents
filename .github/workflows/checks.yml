@@ -1,10 +1,22 @@
-name: Application checks
+name: CI/CD
+
 on:
   push:
+    branches: [main]
   pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   check:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -22,3 +34,50 @@ jobs:
         with:
           name: browser-test-results
           path: test-results/
+
+  deploy:
+    name: Deploy production
+    needs: check
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: production
+      url: https://goldencreations.events/
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure production SSH access
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.PRODUCTION_SSH_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.PRODUCTION_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/production
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/production ~/.ssh/known_hosts
+
+      - name: Upload and activate release
+        env:
+          DEPLOY_HOST: ${{ vars.PRODUCTION_HOST }}
+          DEPLOY_USER: ${{ vars.PRODUCTION_USER }}
+          RELEASE_SHA: ${{ github.sha }}
+        run: |
+          archive="/tmp/goldenevents-${RELEASE_SHA}.tar.gz"
+          tar --exclude=.git -czf "$archive" .
+          scp -i ~/.ssh/production "$archive" "${DEPLOY_USER}@${DEPLOY_HOST}:/tmp/"
+          ssh -i ~/.ssh/production "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            "RELEASE_SHA=${RELEASE_SHA} bash /opt/goldenevents/current/deploy/receive-release.sh /tmp/goldenevents-${RELEASE_SHA}.tar.gz"
+
+      - name: Verify public website
+        run: curl --fail --show-error --silent --retry 6 --retry-delay 5 https://goldencreations.events/api/health
+
+      - name: Record deployment summary
+        run: |
+          {
+            echo '### Production deployment'
+            echo ''
+            echo "- Commit: \`${GITHUB_SHA}\`"
+            echo '- URL: https://goldencreations.events/'
+            echo '- Status: healthy'
+          } >> "$GITHUB_STEP_SUMMARY"
