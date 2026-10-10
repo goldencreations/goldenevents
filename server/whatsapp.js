@@ -1,6 +1,16 @@
 import { renderTicketImage } from './ticket-image.js';
 
 let templateCache;
+let senderCache;
+async function senderNumber() {
+  const id = process.env.WHATSAPP_PHONE_NUMBER_ID;
+  if (senderCache?.id === id && senderCache.until > Date.now()) return senderCache.number;
+  const phone = await graphRequest(`${id}?fields=display_phone_number`);
+  const number = String(phone.display_phone_number || '').replace(/\D/g, '');
+  if (!number) throw new Error('WhatsApp sender number could not be verified.');
+  senderCache = { id, number, until: Date.now() + 3600000 };
+  return number;
+}
 export async function metaTemplateReady() {
   if (!metaWhatsAppConfigured()) throw new Error('Meta WhatsApp delivery is not configured.');
   const account = process.env.WHATSAPP_BUSINESS_ID;
@@ -70,6 +80,8 @@ export async function sendMetaTickets(db, delivery, config) {
     AND e.status!='cancelled' AND t.claimed_at IS NULL AND t.checked_in_at IS NULL`,
     )
     .all(delivery.order_id);
+  if (tickets.length && delivery.recipient.replace(/\D/g, '') === (await senderNumber()))
+    throw new Error('WhatsApp cannot send a ticket to its own business sender number.');
   let accepted = 0;
   for (const ticket of tickets) {
     db.prepare(

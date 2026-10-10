@@ -6,7 +6,7 @@ COPY . .
 RUN npm run build && npm prune --omit=dev
 
 FROM node:24-bookworm-slim
-RUN apt-get update && apt-get install -y --no-install-recommends fonts-dejavu-core && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends fonts-dejavu-core fontconfig-config && rm -rf /var/lib/apt/lists/*
 ENV NODE_ENV=production PORT=3001 DATA_DIR=/app/data SEED_DEMO=false PAYMENT_DRIVER=disabled
 WORKDIR /app
 COPY --from=build --chown=node:node /app/package.json /app/package-lock.json ./

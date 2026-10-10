@@ -174,6 +174,8 @@ Meta accepts a message can still cause a duplicate on retry. `sent` means accept
 by Meta, not confirmed delivery or read; delivery-status webhooks are not connected.
 The webhook verify token is not needed for outbound sending. Ticket handover still
 requires separately configured verification SMS.
+For a live sample test, use a different recipient from the business sender number;
+Meta rejects messages sent to the sender itself.
 
 ## Buy Together, Arrive Separately
 

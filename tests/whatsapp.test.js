@@ -91,6 +91,8 @@ test('Meta sends private PNG media headers and resumes only unacknowledged ticke
   const payloads = [];
   t.mock.method(globalThis, 'fetch', async (url, options) => {
     assert.equal(options.headers.Authorization, 'Bearer test-only');
+    if (url.endsWith('?fields=display_phone_number'))
+      return Response.json({ display_phone_number: '+255700000001' });
     if (url.includes('/message_templates?'))
       return Response.json({
         data: [
@@ -208,6 +210,30 @@ test('pending template review holds tickets without consuming delivery retries',
   const row = db.prepare('SELECT * FROM deliveries WHERE id=?').get(delivery.id);
   assert.equal(row.status, 'queued');
   assert.equal(row.attempts, 0);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM whatsapp_ticket_messages').get().n, 0);
+});
+
+test('business sender cannot receive its own ticket and no image is uploaded', async (t) => {
+  const { db, config, delivery } = fixture(t);
+  const settings = {
+    WHATSAPP_DRIVER: 'meta',
+    WHATSAPP_PHONE_NUMBER_ID: '987654',
+    WHATSAPP_ACCESS_TOKEN: 'test-only',
+    WHATSAPP_TEMPLATE_NAME: 'golden_event_ticket',
+  };
+  const previous = Object.fromEntries(Object.keys(settings).map((key) => [key, process.env[key]]));
+  Object.assign(process.env, settings);
+  t.after(() => {
+    for (const key of Object.keys(settings)) {
+      if (previous[key] === undefined) delete process.env[key];
+      else process.env[key] = previous[key];
+    }
+  });
+  t.mock.method(globalThis, 'fetch', async (url) => {
+    assert.ok(url.endsWith('/987654?fields=display_phone_number'));
+    return Response.json({ display_phone_number: delivery.recipient });
+  });
+  await assert.rejects(sendMetaTickets(db, delivery, config), /own business sender/);
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM whatsapp_ticket_messages').get().n, 0);
 });
 
