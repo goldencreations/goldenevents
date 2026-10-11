@@ -19,7 +19,11 @@ export function AuthPage({ register = false }: { register?: boolean }) {
   if (user)
     return (
       <Navigate
-        to={location.state?.from || (user.role === 'scanner' ? '/dashboard/scan' : '/dashboard')}
+        to={
+          user.must_change_password
+            ? '/dashboard/settings'
+            : location.state?.from || (user.role === 'scanner' ? '/dashboard/scan' : '/dashboard')
+        }
         replace
       />
     );
@@ -33,7 +37,10 @@ export function AuthPage({ register = false }: { register?: boolean }) {
       );
       setUser(result.user);
       navigate(
-        location.state?.from || (result.user.role === 'scanner' ? '/dashboard/scan' : '/dashboard'),
+        result.user.must_change_password
+          ? '/dashboard/settings'
+          : location.state?.from ||
+              (result.user.role === 'scanner' ? '/dashboard/scan' : '/dashboard'),
       );
     } catch (e) {
       setError((e as Error).message);

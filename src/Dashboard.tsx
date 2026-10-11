@@ -439,15 +439,15 @@ function SalesChart({ stats }: { stats: Stats }) {
           <span>0</span>
         </div>
         <div className="chart-bars">
-            {stats.chart.map((day, index) => (
+          {stats.chart.map((day, index) => (
             <div className="chart-column" key={day.date}>
               <div className="bar-track">
                 <div
                   className="chart-bar"
-                    style={{
-                      height: `${Math.max(2, (day.revenue / max) * 100)}%`,
-                      animationDelay: `${120 + index * 75}ms`,
-                    }}
+                  style={{
+                    height: `${Math.max(2, (day.revenue / max) * 100)}%`,
+                    animationDelay: `${120 + index * 75}ms`,
+                  }}
                   title={`TZS ${money(day.revenue)} · ${day.tickets} tickets`}
                 />
               </div>
@@ -1357,6 +1357,7 @@ export function AccountSettings() {
 }
 function SettingsPage() {
   const { user, setUser, config, notify } = useApp();
+  const passwordRequired = !!user?.must_change_password;
   const navigate = useNavigate();
   const [name, setName] = useState(user?.name || ''),
     [org, setOrg] = useState(user?.organization || ''),
@@ -1398,46 +1399,48 @@ function SettingsPage() {
   };
   return (
     <>
-      <PageHeading title="Settings" />
+      <PageHeading title={passwordRequired ? 'Set your password' : 'Settings'} />
       {error && <ErrorBox>{error}</ErrorBox>}
-      <div className="settings-section">
-        <div>
-          <h2>Account</h2>
-          <p className="muted">Your account details</p>
+      {!passwordRequired && (
+        <div className="settings-section">
+          <div>
+            <h2>Account</h2>
+            <p className="muted">Your account details</p>
+          </div>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              save();
+            }}
+          >
+            <label>
+              Full name
+              <input required value={name} onChange={(e) => setName(e.target.value)} />
+            </label>
+            <label>
+              Organization
+              <input value={org} onChange={(e) => setOrg(e.target.value)} />
+            </label>
+            <label>
+              Email address
+              <input value={user?.email} disabled type="email" />
+            </label>
+            <label>
+              Contact number
+              <input
+                type="tel"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="0712 345 678"
+              />
+            </label>
+            <button className="button primary" disabled={busy}>
+              Save changes
+              <Check size={16} />
+            </button>
+          </form>
         </div>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            save();
-          }}
-        >
-          <label>
-            Full name
-            <input required value={name} onChange={(e) => setName(e.target.value)} />
-          </label>
-          <label>
-            Organization
-            <input value={org} onChange={(e) => setOrg(e.target.value)} />
-          </label>
-          <label>
-            Email address
-            <input value={user?.email} disabled type="email" />
-          </label>
-          <label>
-            Contact number
-            <input
-              type="tel"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              placeholder="0712 345 678"
-            />
-          </label>
-          <button className="button primary" disabled={busy}>
-            Save changes
-            <Check size={16} />
-          </button>
-        </form>
-      </div>
+      )}
       <div className="settings-section">
         <div>
           <h2>Password</h2>
@@ -1450,7 +1453,7 @@ function SettingsPage() {
           }}
         >
           <label>
-            Current password
+            {passwordRequired ? 'Temporary password' : 'Current password'}
             <input
               type="password"
               autoComplete="current-password"

@@ -77,8 +77,10 @@ function EventApp() {
   );
   const protectedPage = (children: React.ReactNode) =>
     user ? (
-      user.role === 'scanner' &&
-      !['/dashboard/scan', '/dashboard/settings'].includes(location.pathname) ? (
+      user.must_change_password && location.pathname !== '/dashboard/settings' ? (
+        <Navigate to="/dashboard/settings" replace />
+      ) : user.role === 'scanner' &&
+        !['/dashboard/scan', '/dashboard/settings'].includes(location.pathname) ? (
         <Navigate to="/dashboard/scan" replace />
       ) : (
         children

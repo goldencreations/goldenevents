@@ -43,6 +43,60 @@ export function gateTeam(db, user, eventId) {
   };
 }
 
+export function createScanner(db, config, manager, eventId, input) {
+  const event = manageGate(db, manager, eventId);
+  if (event.status === 'cancelled') throw new HttpError(409, 'This event is cancelled.');
+  const parsed = z
+    .object({ name: z.string().trim().min(2).max(80), email: z.email().max(200) })
+    .safeParse(input);
+  if (!parsed.success) throw new HttpError(400, 'Enter a name and valid email.');
+  const email = parsed.data.email.toLowerCase();
+  return transaction(db, () => {
+    let account = db.prepare('SELECT * FROM users WHERE email=?').get(email);
+    if (
+      account &&
+      db
+        .prepare(
+          'SELECT 1 FROM event_scanners WHERE event_id=? AND user_id=? AND revoked_at IS NULL',
+        )
+        .get(eventId, account.id)
+    )
+      throw new HttpError(409, 'This account already has scanner access.');
+    const now = new Date().toISOString();
+    const temporaryPassword = account ? undefined : randomBytes(18).toString('base64url');
+    if (!account) {
+      account = {
+        id: randomUUID(),
+        name: parsed.data.name,
+        email,
+        password: hashPassword(temporaryPassword),
+        role: 'scanner',
+        phone: '',
+        organization: '',
+        created_at: now,
+      };
+      db.prepare('INSERT INTO users VALUES (?,?,?,?,?,?,?,?)').run(...Object.values(account));
+      db.prepare('INSERT INTO scanner_bootstrap VALUES (?,?,?)').run(account.id, manager.id, now);
+    }
+    // Existing credentials and roles belong to the account, never to the event manager.
+    db.prepare(
+      `INSERT INTO event_scanners (event_id,user_id,assigned_by,source,created_at)
+      VALUES (?,?,?,?,?) ON CONFLICT(event_id,user_id) DO UPDATE SET
+      assigned_by=excluded.assigned_by,source=excluded.source,created_at=excluded.created_at,revoked_at=NULL`,
+    ).run(eventId, account.id, manager.id, manager.role === 'admin' ? 'golden' : 'organizer', now);
+    db.prepare(
+      `UPDATE scanner_invites SET cancelled_at=? WHERE event_id=? AND email=?
+      AND accepted_at IS NULL AND cancelled_at IS NULL`,
+    ).run(now, eventId, email);
+    return {
+      account: { id: account.id, name: account.name, email: account.email },
+      created: !!temporaryPassword,
+      temporary_password: temporaryPassword,
+      login_url: `${config.appOrigin}/login`,
+    };
+  });
+}
+
 export function inviteScanner(db, config, user, eventId, input) {
   const event = manageGate(db, user, eventId);
   if (event.status === 'cancelled') throw new HttpError(409, 'This event is cancelled.');

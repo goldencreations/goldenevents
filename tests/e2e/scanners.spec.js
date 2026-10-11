@@ -1,5 +1,83 @@
 import { test, expect } from '@playwright/test';
 
+test('manual scanner account has one-time credentials and must change password before scanning', async ({
+  page,
+  browser,
+}) => {
+  await page.goto('/login');
+  await page.getByRole('button', { name: 'Open demo workspace' }).click();
+  await expect(page.getByRole('heading', { name: /Good/ })).toBeVisible();
+  const createdEvent = await page.request.post('/api/organizer/events', {
+    headers: { Origin: 'http://localhost:5181' },
+    data: {
+      name: `Direct Gate ${Date.now()}`,
+      description: 'A music night with independent scanners.',
+      starts_at: '2027-03-20T17:00:00Z',
+      venue: 'Warehouse 7',
+      city: 'Dar es Salaam',
+      category: 'Music',
+      image: 'https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3',
+      status: 'published',
+      tickets: [{ name: 'Regular', price: 1000, capacity: 4 }],
+    },
+  });
+  expect(createdEvent.status()).toBe(201);
+  const { event } = await createdEvent.json();
+  await page.goto(`/dashboard/team?event=${event.id}`);
+  await expect(page.getByRole('radio', { name: 'Create account', exact: true })).toBeChecked();
+  await page.getByLabel('Name', { exact: true }).fill('Juma Gate');
+  const email = `manual-${Date.now()}@example.com`;
+  await page.getByLabel('Email', { exact: true }).fill(email);
+  const response = page.waitForResponse(
+    (r) =>
+      r.url().endsWith(`/api/gate/events/${event.id}/scanners`) && r.request().method() === 'POST',
+  );
+  await page.getByRole('button', { name: 'Create scanner account', exact: true }).click();
+  const credentials = await (await response).json();
+  await expect(page.getByText('Account ready', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('Temporary password')).toHaveAttribute('type', 'password');
+  await expect(page.getByRole('button', { name: 'Revoke access for Juma Gate' })).toBeVisible();
+  await page.screenshot({ path: 'test-results/manual-scanner-desktop.png', fullPage: true });
+  await page.setViewportSize({ width: 375, height: 812 });
+  await expect
+    .poll(async () => {
+      const box = await page.locator('.sidebar').boundingBox();
+      return box.x + box.width;
+    })
+    .toBeLessThanOrEqual(1);
+  await page.screenshot({ path: 'test-results/manual-scanner-mobile.png', fullPage: true });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  const ctx = await browser.newContext({ viewport: { width: 375, height: 812 } });
+  const scanner = await ctx.newPage();
+  const login = await scanner.request.post('/api/auth/login', {
+    headers: { Origin: 'http://localhost:5181' },
+    data: { email, password: credentials.temporary_password },
+  });
+  expect(login.status()).toBe(200);
+  await scanner.goto('/dashboard/scan');
+  await expect(scanner).toHaveURL(/\/dashboard\/settings$/);
+  await expect(scanner.getByRole('heading', { name: 'Set your password' })).toBeVisible();
+  await expect(scanner.getByLabel('Temporary password')).toBeVisible();
+  await expect(scanner.getByRole('heading', { name: 'Account', exact: true })).toHaveCount(0);
+  await scanner.screenshot({ path: 'test-results/scanner-first-login-mobile.png', fullPage: true });
+  // All credentials here belong to isolated test fixtures, not real staff accounts.
+  const updated = await scanner.request.put('/api/settings/password', {
+    headers: { Origin: 'http://localhost:5181' },
+    data: { current: credentials.temporary_password, newPassword: 'PrivateTestScanner123!' },
+  });
+  expect(updated.status()).toBe(200);
+  await scanner.request.post('/api/auth/login', {
+    headers: { Origin: 'http://localhost:5181' },
+    data: { email, password: 'PrivateTestScanner123!' },
+  });
+  await scanner.goto('/dashboard/scan');
+  await expect(scanner.getByLabel('Event to scan')).toHaveValue(event.id);
+  await page.getByRole('radio', { name: 'Invite', exact: true }).check();
+  await expect(page.getByText('Account ready', { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('checkbox', { name: /Send by email/ })).toBeDisabled();
+  await ctx.close();
+});
+
 test('organizer invites gate staff; scanner has a limited workspace and revocation applies immediately', async ({
   page,
   browser,
@@ -29,6 +107,7 @@ test('organizer invites gate staff; scanner has a limited workspace and revocati
   await page.goto(`/dashboard/team?event=${event.id}`);
   await expect(page.getByRole('heading', { name: 'Gate team', exact: true })).toBeVisible();
   await expect(page.getByLabel('Team event')).toHaveValue(event.id);
+  await page.getByRole('radio', { name: 'Invite', exact: true }).check();
   await page.getByLabel('Name', { exact: true }).fill('Asha Gate');
   const email = `gate-${Date.now()}@example.com`;
   await page.getByLabel('Email', { exact: true }).fill(email);
@@ -38,6 +117,12 @@ test('organizer invites gate staff; scanner has a limited workspace and revocati
   const token = link.split('/').pop();
   await page.screenshot({ path: 'test-results/gate-team-desktop.png', fullPage: true });
   await page.setViewportSize({ width: 375, height: 812 });
+  await expect
+    .poll(async () => {
+      const box = await page.locator('.sidebar').boundingBox();
+      return box.x + box.width;
+    })
+    .toBeLessThanOrEqual(1);
   await page.screenshot({ path: 'test-results/gate-team-mobile.png', fullPage: true });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   const ctx = await browser.newContext({ viewport: { width: 375, height: 812 } });

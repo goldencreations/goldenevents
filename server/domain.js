@@ -348,6 +348,8 @@ export function completeOrder(db, orderId, config) {
 }
 
 export function checkIn(db, user, eventId, rawCode) {
+  if (db.prepare('SELECT 1 FROM scanner_bootstrap WHERE user_id=?').get(user.id))
+    throw new HttpError(403, 'Change your temporary password before continuing.');
   const code = String(rawCode || '')
     .trim()
     .split('/')

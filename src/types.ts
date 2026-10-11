@@ -5,6 +5,7 @@ export type User = {
   role: string;
   phone: string;
   organization: string;
+  must_change_password?: boolean;
 };
 export type Config = {
   baseDomain: string;

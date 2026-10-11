@@ -7,17 +7,19 @@ import path from 'node:path';
 import { createApp } from '../server/app.js';
 import { openDatabase } from '../server/db.js';
 import { makeConfig } from '../server/config.js';
-import { hashPassword, tokenHash } from '../server/auth.js';
+import { hashPassword, tokenHash, verifyPassword } from '../server/auth.js';
+import nodemailer from 'nodemailer';
 import { saveEvent, reserveOrder, completeOrder, checkIn } from '../server/domain.js';
 import {
   inviteScanner,
+  createScanner,
   acceptScanner,
   scannerInvitation,
   revokeScanner,
   cancelScannerInvite,
 } from '../server/scanners.js';
 
-async function fixture(t) {
+async function fixture(t, overrides = {}) {
   const dir = mkdtempSync(path.join(tmpdir(), 'golden-gate-')),
     db = openDatabase(dir);
   const config = makeConfig({
@@ -25,6 +27,8 @@ async function fixture(t) {
     production: false,
     seedDemo: false,
     paymentDriver: 'demo',
+    deliveryDriver: 'outbox',
+    ...overrides,
   });
   const addUser = (role, email) => {
     const user = {
@@ -317,4 +321,259 @@ test('existing accounts cannot be hijacked; invitations are single use, replacea
     /cancelled/,
   );
   assert.throws(() => checkIn(f.db, f.other, f.event.id, f.tickets[0].code), /cancelled/);
+});
+
+test('manual scanner creation requires a new private password before any scanning', async (t) => {
+  const f = await fixture(t),
+    ownerCookie = f.session(f.owner);
+  const pending = f.invite(f.owner, f.event, 'manual@example.com');
+  const created = await f.req(`/gate/events/${f.event.id}/scanners`, ownerCookie, {
+    name: 'Manual Scanner',
+    email: 'MANUAL@example.com',
+    role: 'admin',
+    password: 'IgnoredPassword123!',
+  });
+  assert.equal(created.status, 201);
+  const { account, temporary_password: temporary, created: isNew } = created.data;
+  assert.equal(isNew, true);
+  assert.ok(temporary.length >= 24);
+  assert.deepEqual(Object.keys(account).sort(), ['email', 'id', 'name']);
+  const user = f.db.prepare('SELECT * FROM users WHERE id=?').get(account.id);
+  assert.equal(user.role, 'scanner');
+  assert.equal(verifyPassword(temporary, user.password), true);
+  assert.notEqual(user.password, temporary);
+  assert.throws(() => scannerInvitation(f.db, pending.token), /no longer available/);
+  const roster = await f.req(`/gate/events/${f.event.id}/team`, ownerCookie);
+  assert.equal(roster.data.scanners[0].id, account.id);
+  assert.equal(JSON.stringify(roster.data).includes(temporary), false);
+  assert.equal(
+    (
+      await f.req(`/gate/events/${f.event.id}/scanners`, ownerCookie, {
+        name: 'Again Scanner',
+        email: account.email,
+      })
+    ).status,
+    409,
+  );
+  assert.equal(
+    (
+      await f.req(`/gate/events/${f.event.id}/scanners`, f.session(f.other), {
+        name: 'Bad Scanner',
+        email: 'bad@example.com',
+      })
+    ).status,
+    404,
+  );
+  const signed = await f.req('/auth/login', '', { email: account.email, password: temporary });
+  assert.equal(signed.status, 200);
+  assert.equal(signed.data.user.must_change_password, true);
+  assert.equal((await f.req('/auth/me', signed.cookie)).data.user.must_change_password, true);
+  const secondSession = f.session(user);
+  for (const endpoint of ['/scanner/events', '/organizer/events', '/gate/events'])
+    assert.equal((await f.req(endpoint, signed.cookie)).status, 403);
+  assert.equal(
+    (
+      await f.req('/scanner/check-in', signed.cookie, {
+        event_id: f.event.id,
+        code: f.tickets[0].code,
+      })
+    ).status,
+    403,
+  );
+  assert.throws(() => checkIn(f.db, user, f.event.id, f.tickets[0].code), /temporary password/);
+  assert.equal(
+    (
+      await f.req(
+        '/settings',
+        signed.cookie,
+        {
+          name: 'No bypass',
+          organization: '',
+          phone: '',
+        },
+        'PUT',
+      )
+    ).status,
+    403,
+  );
+  assert.equal(
+    (
+      await f.req(
+        '/settings/password',
+        signed.cookie,
+        {
+          current: temporary,
+          newPassword: temporary,
+        },
+        'PUT',
+      )
+    ).status,
+    400,
+  );
+  const updated = await f.req(
+    '/settings/password',
+    signed.cookie,
+    {
+      current: temporary,
+      newPassword: 'PrivateScannerPassword123!',
+    },
+    'PUT',
+  );
+  assert.equal(updated.status, 200);
+  assert.equal((await f.req('/scanner/events', secondSession)).status, 401);
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM scanner_bootstrap').get().n, 0);
+  assert.equal(
+    (await f.req('/auth/login', '', { email: account.email, password: temporary })).status,
+    401,
+  );
+  const ready = await f.req('/auth/login', '', {
+    email: account.email,
+    password: 'PrivateScannerPassword123!',
+  });
+  assert.equal(ready.data.user.must_change_password, false);
+  assert.equal((await f.req('/scanner/events', ready.cookie)).data.events.length, 1);
+  assert.equal((await f.req('/organizer/events', ready.cookie)).status, 403);
+  assert.equal(
+    (
+      await f.req('/scanner/check-in', ready.cookie, {
+        event_id: f.event.id,
+        code: f.tickets[0].code,
+      })
+    ).status,
+    200,
+  );
+});
+
+test('direct assignment preserves existing credentials and roles, and respects event scope', async (t) => {
+  const f = await fixture(t);
+  const existing = createScanner(f.db, f.config, f.owner, f.event.id, {
+    name: 'Do not rename',
+    email: f.other.email,
+  });
+  assert.equal(existing.created, false);
+  assert.equal(existing.temporary_password, undefined);
+  assert.deepEqual({ ...f.db.prepare('SELECT * FROM users WHERE id=?').get(f.other.id) }, f.other);
+  const scanner = createScanner(f.db, f.config, f.admin, f.second.id, {
+    name: 'Golden Staff',
+    email: 'golden@example.com',
+  });
+  assert.equal(
+    f.db.prepare('SELECT source FROM event_scanners WHERE user_id=?').get(scanner.account.id)
+      .source,
+    'golden',
+  );
+  const before = f.db
+    .prepare('SELECT password FROM users WHERE id=?')
+    .get(scanner.account.id).password;
+  const assigned = createScanner(f.db, f.config, f.owner, f.event.id, {
+    name: 'New name',
+    email: scanner.account.email,
+  });
+  assert.equal(assigned.temporary_password, undefined);
+  assert.equal(
+    f.db.prepare('SELECT password FROM users WHERE id=?').get(scanner.account.id).password,
+    before,
+  );
+  const staff = f.db.prepare('SELECT * FROM users WHERE id=?').get(scanner.account.id);
+  assert.throws(
+    () =>
+      createScanner(f.db, f.config, staff, f.event.id, {
+        name: 'Another Scanner',
+        email: 'another@example.com',
+      }),
+    /Event not found/,
+  );
+  f.db.prepare("UPDATE events SET status='cancelled' WHERE id=?").run(f.event.id);
+  assert.throws(
+    () =>
+      createScanner(f.db, f.config, f.owner, f.event.id, {
+        name: 'Cancelled Scanner',
+        email: 'cancelled@example.com',
+      }),
+    /cancelled/,
+  );
+  assert.equal(
+    f.db.prepare('SELECT id FROM users WHERE email=?').get('cancelled@example.com'),
+    undefined,
+  );
+});
+
+function mockMail(t) {
+  for (const [key, value] of Object.entries({
+    SMTP_HOST: 'smtp.example.test',
+    SMTP_FROM: 'gate@example.com',
+    SMTP_USER: '',
+    SMTP_PASSWORD: '',
+  })) {
+    const previous = process.env[key];
+    process.env[key] = value;
+    t.after(() =>
+      previous === undefined ? delete process.env[key] : (process.env[key] = previous),
+    );
+  }
+}
+
+test('email invites fail closed when unavailable without replacing a valid invitation', async (t) => {
+  mockMail(t);
+  const f = await fixture(t),
+    pending = f.invite();
+  const send = t.mock.method(nodemailer, 'createTransport', () => {
+    throw new Error('Must not send');
+  });
+  assert.equal((await f.req('/gate/events', f.session(f.owner))).data.email_available, false);
+  const result = await f.req(`/gate/events/${f.event.id}/invites`, f.session(f.owner), {
+    name: 'Asha Gate',
+    email: 'scanner@example.com',
+    delivery: 'email',
+  });
+  assert.equal(result.status, 503);
+  assert.equal(scannerInvitation(f.db, pending.token).id, pending.id);
+  assert.equal(send.mock.callCount(), 0);
+});
+
+test('email invitation sends the intended link and recipient when SMTP accepts it', async (t) => {
+  mockMail(t);
+  const f = await fixture(t, { deliveryDriver: 'live' });
+  const sent = [];
+  t.mock.method(nodemailer, 'createTransport', () => ({
+    sendMail: async (message) => {
+      sent.push(message);
+      return { accepted: [message.to] };
+    },
+    close() {},
+  }));
+  assert.equal((await f.req('/gate/events', f.session(f.owner))).data.email_available, true);
+  const response = await f.req(`/gate/events/${f.event.id}/invites`, f.session(f.owner), {
+    name: 'Asha Gate',
+    email: 'ASHA@example.com',
+    delivery: 'email',
+  });
+  assert.equal(response.status, 201);
+  assert.equal(response.data.email_delivery, 'sent');
+  assert.equal(sent[0].to, 'asha@example.com');
+  assert.ok(sent[0].text.includes(response.data.url));
+  assert.ok(sent[0].text.includes(f.event.name));
+});
+
+test('SMTP failure keeps a working share link and does not expose transport errors', async (t) => {
+  mockMail(t);
+  const f = await fixture(t, { deliveryDriver: 'live' });
+  t.mock.method(nodemailer, 'createTransport', () => ({
+    sendMail: async () => {
+      throw new Error('SECRET SMTP credentials');
+    },
+    close() {},
+  }));
+  const response = await f.req(`/gate/events/${f.event.id}/invites`, f.session(f.owner), {
+    name: 'Asha Gate',
+    email: 'asha@example.com',
+    delivery: 'email',
+  });
+  assert.equal(response.status, 201);
+  assert.equal(response.data.email_delivery, 'failed');
+  assert.equal(JSON.stringify(response.data).includes('SECRET'), false);
+  assert.equal(
+    scannerInvitation(f.db, response.data.url.split('/').pop()).email,
+    'asha@example.com',
+  );
 });

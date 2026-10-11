@@ -25,5 +25,6 @@ export function tokenHash(token) {
 
 export function publicUser(user) {
   const { password, ...safe } = user;
+  if ('must_change_password' in safe) safe.must_change_password = !!safe.must_change_password;
   return safe;
 }

@@ -364,6 +364,75 @@
   font-size: 12px;
   color: #62655e;
 }
+
+.gate-mode {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  margin: 0 0 24px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.gate-mode label {
+  flex: 1;
+  position: relative;
+  cursor: pointer;
+}
+.gate-mode input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+.gate-mode span {
+  display: block;
+  text-align: center;
+  padding: 10px 6px;
+  border-radius: 4px;
+  font-size: 13px;
+}
+.gate-mode input:checked + span {
+  background: #171715;
+  color: #fff;
+}
+.gate-mode input:focus-visible + span {
+  outline: 2px solid #506c35;
+  outline-offset: 2px;
+}
+.gate-mode:disabled label {
+  cursor: default;
+  opacity: 0.6;
+}
+.gate-email-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.gate-email-option input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+}
+.gate-email-option small {
+  display: block;
+  color: var(--muted);
+  margin-top: 4px;
+}
+.gate-password {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.gate-password input {
+  min-width: 0;
+  flex: 1;
+}
+.gate-password button {
+  flex-shrink: 0;
+}
+.gate-created-link > span {
+  overflow-wrap: anywhere;
+}
 .scanner-invite-tool {
   width: min(440px, calc(100% - 40px));
   margin: 60px auto;

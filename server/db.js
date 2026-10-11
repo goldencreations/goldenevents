@@ -77,6 +77,10 @@ export function openDatabase(dataDir) {
       accepted_at TEXT, cancelled_at TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_scanner_invites_event ON scanner_invites(event_id,email);
+    CREATE TABLE IF NOT EXISTS scanner_bootstrap (
+      user_id TEXT PRIMARY KEY REFERENCES users(id),
+      created_by TEXT NOT NULL REFERENCES users(id), created_at TEXT NOT NULL
+    );
   `);
   // Additive migrations preserve tickets already issued by older versions.
   transaction(db, () => {

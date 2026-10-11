@@ -50,15 +50,24 @@ from the demo database.
 
 ## Gate Teams
 
-Open **Gate team** in the organizer workspace, choose an event, and enter the
-scanner's name and email. Copy the generated invitation and share it privately
-with that person; invitations are not automatically emailed. The single-use link
-expires after seven days. New staff set their own password and get a scanner-only
-account. Existing users must sign in with the invited email before accepting;
-their existing password and role are not changed.
+Open **Gate team**, choose an event, and enter the scanner's name and email.
+**Create account** immediately assigns the scanner and displays a generated
+temporary password once. Share those credentials privately; the scanner must
+change the password before accessing any protected endpoint or scanning. Only
+the password hash is stored. Changing it invalidates all existing sessions.
+Existing accounts are assigned without changing their name, password, or role;
+no credentials are returned for existing accounts.
+
+**Invite** creates a single-use link that expires after seven days. New staff
+set their own password and get a scanner-only account. Existing users must sign
+in with the invited email before accepting. Links can be shared manually, or
+emailed by selecting **Send by email** when `DELIVERY_DRIVER=live`, `SMTP_HOST`
+and `SMTP_FROM` are configured (with `SMTP_PASSWORD` if `SMTP_USER` is set).
+The email option is disabled otherwise. SMTP acceptance is reported as sent,
+not proof of delivery. Failed sending leaves a usable manual invitation link.
 
 Platform administrators use the same screen to assign Golden Creations staff to
-any organizer's event. A staff member can accept invitations for multiple events
+any organizer's event. A staff member can be assigned to multiple events
 using one account. Assignments created by administrators are labeled Golden
 Creations; assignments created by owners are labeled Organizer crew. This is a
 permission workflow, not a staffing marketplace or automatic staff booking.

@@ -25,10 +25,14 @@ import { initiatePayment } from './providers.js';
 import { verifyEcofySignature } from './ecofy.js';
 import { createHealthMonitor } from './health.js';
 import { renderPage } from './metadata.js';
+import { transaction } from './db.js';
+import { scannerEmailAvailable, sendScannerInvitation } from './scanner-mail.js';
 import {
   scannerEvents,
+  manageGate,
   gateTeam,
   inviteScanner,
+  createScanner,
   scannerInvitation,
   acceptScanner,
   revokeScanner,
@@ -129,7 +133,8 @@ export function createApp(db, config, health = createHealthMonitor(db, config)) 
     req.user = raw
       ? db
           .prepare(
-            'SELECT u.* FROM sessions s JOIN users u ON s.user_id=u.id WHERE s.token=? AND s.expires_at>?',
+            `SELECT u.*,EXISTS(SELECT 1 FROM scanner_bootstrap b WHERE b.user_id=u.id) AS must_change_password
+            FROM sessions s JOIN users u ON s.user_id=u.id WHERE s.token=? AND s.expires_at>?`,
           )
           .get(tokenHash(raw), Date.now())
       : null;
@@ -137,6 +142,8 @@ export function createApp(db, config, health = createHealthMonitor(db, config)) 
   });
   const auth = (req, _res, next) => {
     if (!req.user) throw new HttpError(401, 'Sign in to continue.');
+    if (req.user.must_change_password && req.path !== '/api/settings/password')
+      throw new HttpError(403, 'Change your temporary password before continuing.');
     next();
   };
   const admin = (req, _res, next) => {
@@ -165,7 +172,14 @@ export function createApp(db, config, health = createHealthMonitor(db, config)) 
       maxAge: 7 * 86400000,
       path: '/',
     });
-    return res.json({ user: publicUser(user) });
+    return res.json({
+      user: {
+        ...publicUser(user),
+        must_change_password: !!db
+          .prepare('SELECT 1 FROM scanner_bootstrap WHERE user_id=?')
+          .get(user.id),
+      },
+    });
   };
   app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
   app.get('/api/ready', (_req, res) => {
@@ -214,14 +228,35 @@ export function createApp(db, config, health = createHealthMonitor(db, config)) 
               'SELECT id,name,starts_at,status FROM events WHERE owner_id=? ORDER BY starts_at DESC',
             )
             .all(req.user.id);
-    res.json({ events: rows });
+    res.json({ events: rows, email_available: scannerEmailAvailable(config) });
   });
   app.get('/api/gate/events/:id/team', auth, (req, res) =>
     res.json(gateTeam(db, req.user, req.params.id)),
   );
-  app.post('/api/gate/events/:id/invites', auth, (req, res) =>
-    res.status(201).json(inviteScanner(db, config, req.user, req.params.id, req.body)),
+  app.post('/api/gate/events/:id/scanners', auth, authLimit, (req, res) =>
+    res.status(201).json(createScanner(db, config, req.user, req.params.id, req.body)),
   );
+  app.post('/api/gate/events/:id/invites', auth, authLimit, async (req, res) => {
+    const delivery = req.body.delivery || 'link';
+    if (!['link', 'email'].includes(delivery))
+      throw new HttpError(400, 'Choose link or email delivery.');
+    const event = manageGate(db, req.user, req.params.id);
+    if (delivery === 'email' && !scannerEmailAvailable(config))
+      throw new HttpError(
+        503,
+        'Email invitations are not configured. Share the invitation link instead.',
+      );
+    const invitation = inviteScanner(db, config, req.user, req.params.id, req.body);
+    if (delivery === 'email') {
+      try {
+        await sendScannerInvitation(config, invitation, req.body.email.toLowerCase(), event.name);
+        invitation.email_delivery = 'sent';
+      } catch {
+        invitation.email_delivery = 'failed';
+      }
+    }
+    res.status(201).json(invitation);
+  });
   app.delete('/api/gate/events/:id/scanners/:userId', auth, (req, res) => {
     revokeScanner(db, req.user, req.params.id, req.params.userId);
     res.json({ ok: true });
@@ -322,17 +357,21 @@ export function createApp(db, config, health = createHealthMonitor(db, config)) 
       typeof newPassword !== 'string' ||
       newPassword.length < 10 ||
       newPassword.length > 128 ||
+      (req.user.must_change_password && current === newPassword) ||
       !verifyPassword(current, req.user.password)
     )
       throw new HttpError(
         400,
         'Check your current password and use at least 10 characters for the new one.',
       );
-    db.prepare('UPDATE users SET password=? WHERE id=?').run(
-      hashPassword(newPassword),
-      req.user.id,
-    );
-    db.prepare('DELETE FROM sessions WHERE user_id=?').run(req.user.id);
+    transaction(db, () => {
+      db.prepare('UPDATE users SET password=? WHERE id=?').run(
+        hashPassword(newPassword),
+        req.user.id,
+      );
+      db.prepare('DELETE FROM scanner_bootstrap WHERE user_id=?').run(req.user.id);
+      db.prepare('DELETE FROM sessions WHERE user_id=?').run(req.user.id);
+    });
     res.clearCookie('ge_session', { path: '/' }).json({ ok: true });
   });
   app.get('/api/events', (_req, res) =>

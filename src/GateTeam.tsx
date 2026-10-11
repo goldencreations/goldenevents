@@ -9,6 +9,8 @@ import {
   Loader2,
   ArrowRight,
   ScanLine,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { api, send, dateLabel } from './api';
 import { useApp } from './context';
@@ -19,6 +21,12 @@ import type { User } from './types';
 type Member = { id: string; name: string; email: string; source: string; expires_at?: number };
 type GateEvent = { id: string; name: string; starts_at: string; status: string };
 type Team = { scanners: Member[]; invites: Member[] };
+type CreatedAccount = {
+  account: { id: string; name: string; email: string };
+  created: boolean;
+  temporary_password?: string;
+  login_url: string;
+};
 
 export function GateTeam() {
   const [params] = useSearchParams();
@@ -32,10 +40,17 @@ export function GateTeam() {
     [busy, setBusy] = useState(false);
   const [link, setLink] = useState(''),
     [loading, setLoading] = useState(true);
+  const [mode, setMode] = useState<'create' | 'invite'>('create');
+  const [emailAvailable, setEmailAvailable] = useState(false),
+    [sendEmail, setSendEmail] = useState(false);
+  const [account, setAccount] = useState<CreatedAccount | null>(null),
+    [showPassword, setShowPassword] = useState(false),
+    [emailDelivery, setEmailDelivery] = useState('');
   useEffect(() => {
-    api<{ events: GateEvent[] }>('/gate/events')
+    api<{ events: GateEvent[]; email_available: boolean }>('/gate/events')
       .then((d) => {
         setEvents(d.events);
+        setEmailAvailable(d.email_available);
         setEventId(
           d.events.find((e) => e.id === params.get('event'))?.id ||
             d.events.find((e) => e.status === 'published')?.id ||
@@ -49,6 +64,9 @@ export function GateTeam() {
   useEffect(() => {
     setTeam(null);
     setLink('');
+    setAccount(null);
+    setShowPassword(false);
+    setEmailDelivery('');
     setError('');
     if (!eventId) return;
     let active = true;
@@ -77,6 +95,7 @@ export function GateTeam() {
         'DELETE',
       );
       setLink('');
+      setAccount(null);
       await reload(eventId);
       notify(pending ? 'Invitation cancelled.' : 'Scanner access revoked.');
     } catch (e) {
@@ -188,19 +207,57 @@ export function GateTeam() {
               )}
             </section>
             <section className="gate-invite-tool">
-              <h2>Invite a scanner</h2>
+              <h2>Add a scanner</h2>
+              <fieldset className="gate-mode" disabled={busy}>
+                <legend className="sr-only">Account setup</legend>
+                {(['create', 'invite'] as const).map((value) => (
+                  <label key={value}>
+                    <input
+                      type="radio"
+                      name="gate-mode"
+                      value={value}
+                      checked={mode === value}
+                      onChange={() => {
+                        setMode(value);
+                        setLink('');
+                        setAccount(null);
+                        setShowPassword(false);
+                        setEmailDelivery('');
+                        setError('');
+                      }}
+                    />
+                    <span>{value === 'create' ? 'Create account' : 'Invite'}</span>
+                  </label>
+                ))}
+              </fieldset>
               <form
                 onSubmit={async (e) => {
                   e.preventDefault();
                   setBusy(true);
                   setError('');
                   setLink('');
+                  setAccount(null);
+                  setShowPassword(false);
+                  setEmailDelivery('');
                   try {
-                    const result = await send<{ url: string }>(`/gate/events/${eventId}/invites`, {
-                      name,
-                      email,
-                    });
-                    setLink(result.url);
+                    if (mode === 'create') {
+                      const result = await send<CreatedAccount>(
+                        `/gate/events/${eventId}/scanners`,
+                        { name, email },
+                      );
+                      setAccount(result);
+                    } else {
+                      const result = await send<{ url: string; email_delivery?: string }>(
+                        `/gate/events/${eventId}/invites`,
+                        {
+                          name,
+                          email,
+                          delivery: sendEmail ? 'email' : 'link',
+                        },
+                      );
+                      setLink(result.url);
+                      setEmailDelivery(result.email_delivery || '');
+                    }
                     setName('');
                     setEmail('');
                     await reload(eventId);
@@ -233,19 +290,86 @@ export function GateTeam() {
                     autoComplete="off"
                   />
                 </label>
+                {mode === 'invite' && (
+                  <label className="gate-email-option">
+                    <input
+                      type="checkbox"
+                      checked={sendEmail}
+                      disabled={!emailAvailable || busy}
+                      onChange={(e) => setSendEmail(e.target.checked)}
+                    />
+                    <span>
+                      Send by email{!emailAvailable && <small>Email not connected</small>}
+                    </span>
+                  </label>
+                )}
                 <button
                   className="button primary"
                   disabled={
                     busy || !team || events.find((e) => e.id === eventId)?.status === 'cancelled'
                   }
                 >
-                  {busy ? <Loader2 className="spin" size={17} /> : <UserPlus size={17} />}Create
-                  invitation
+                  {busy ? <Loader2 className="spin" size={17} /> : <UserPlus size={17} />}
+                  {mode === 'create' ? 'Create scanner account' : 'Create invitation'}
                 </button>
               </form>
+              {account && (
+                <div className="gate-created-link" role="status">
+                  <strong>{account.created ? 'Account ready' : 'Scanner assigned'}</strong>
+                  <span>{account.account.email}</span>
+                  <a href={account.login_url}>{account.login_url}</a>
+                  {account.temporary_password && (
+                    <>
+                      <label>
+                        Temporary password
+                        <div className="gate-password">
+                          <input
+                            readOnly
+                            type={showPassword ? 'text' : 'password'}
+                            value={account.temporary_password}
+                            autoComplete="off"
+                          />
+                          <button
+                            type="button"
+                            className="icon-button"
+                            title={showPassword ? 'Hide password' : 'Show password'}
+                            aria-label={showPassword ? 'Hide password' : 'Show password'}
+                            onClick={() => setShowPassword(!showPassword)}
+                          >
+                            {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
+                          </button>
+                        </div>
+                      </label>
+                      <small>Password change required at first sign-in.</small>
+                      <button
+                        type="button"
+                        className="button secondary"
+                        onClick={async () => {
+                          try {
+                            await navigator.clipboard.writeText(
+                              `Golden Creations gate access\n${account.login_url}\nEmail: ${account.account.email}\nTemporary password: ${account.temporary_password}`,
+                            );
+                            notify('Account details copied. Share them privately.');
+                          } catch {
+                            notify('Copy is unavailable. Share the details privately.');
+                          }
+                        }}
+                      >
+                        <Copy size={16} />
+                        Copy account details
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
               {link && (
                 <div className="gate-created-link" role="status">
-                  <strong>Invitation ready</strong>
+                  <strong>
+                    {emailDelivery === 'sent' ? 'Invitation emailed' : 'Invitation ready'}
+                  </strong>
+                  {emailDelivery === 'failed' && (
+                    <small>Email could not be sent. Share this link instead.</small>
+                  )}
                   <a href={link}>{link}</a>
                   <button
                     className="button secondary"
