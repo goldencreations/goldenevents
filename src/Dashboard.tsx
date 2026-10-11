@@ -54,6 +54,7 @@ export function Shell({ children, title = 'Overview' }: { children: ReactNode; t
     [query, setQuery] = useState(''),
     [found, setFound] = useState<Event[]>([]);
   const searchRef = useRef<HTMLInputElement>(null);
+  const scannerOnly = user?.role === 'scanner';
   useEffect(() => {
     setOpen(false);
     setQuery('');
@@ -117,23 +118,30 @@ export function Shell({ children, title = 'Overview' }: { children: ReactNode; t
           </span>
           <span>
             {user?.organization || 'My workspace'}
-            <small>Organizer workspace</small>
+            <small>{scannerOnly ? 'Scanner workspace' : 'Organizer workspace'}</small>
           </span>
           <ChevronDown size={15} />
         </div>
         <span className="nav-section">WORKSPACE</span>
         <nav>
-          {navigation.map(({ to, label, icon: Icon, end }) => (
-            <NavLink key={to} to={to} end={end}>
-              <Icon size={18} />
-              {label}
-              {label === 'Events' && <span className="nav-dot" />}
-            </NavLink>
-          ))}
+          {!scannerOnly &&
+            navigation.map(({ to, label, icon: Icon, end }) => (
+              <NavLink key={to} to={to} end={end}>
+                <Icon size={18} />
+                {label}
+                {label === 'Events' && <span className="nav-dot" />}
+              </NavLink>
+            ))}
           <NavLink to="/dashboard/scan">
             <ScanLine size={18} />
             Gate scanner
           </NavLink>
+          {!scannerOnly && (
+            <NavLink to="/dashboard/team">
+              <ShieldCheck size={18} />
+              Gate team
+            </NavLink>
+          )}
         </nav>
         <div className="sidebar-bottom">
           <NavLink to="/dashboard/settings">
@@ -166,7 +174,9 @@ export function Shell({ children, title = 'Overview' }: { children: ReactNode; t
             </span>
             <span>
               {user?.name}
-              <small>{user?.role === 'admin' ? 'Administrator' : 'Organizer'}</small>
+              <small>
+                {scannerOnly ? 'Scanner' : user?.role === 'admin' ? 'Administrator' : 'Organizer'}
+              </small>
             </span>
             <button className="icon-button" title="Sign out" aria-label="Sign out" onClick={logout}>
               <LogOut size={17} />
@@ -189,46 +199,50 @@ export function Shell({ children, title = 'Overview' }: { children: ReactNode; t
             <strong>{title}</strong>
           </div>
           <div className="topbar-right">
-            <div className="global-search">
-              <Search size={16} />
-              <input
-                ref={searchRef}
-                aria-label="Search events"
-                placeholder="Search events..."
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-              />
-              {query && (
-                <div className="search-results">
-                  {found.length ? (
-                    found.map((event) => (
-                      <Link
-                        key={event.id}
-                        to={`/dashboard/events/${event.id}`}
-                        onClick={() => setQuery('')}
-                      >
-                        <CalendarDays size={16} />
-                        <span>
-                          {event.name}
-                          <small>{dateLabel(event.starts_at)}</small>
-                        </span>
-                        <ArrowUpRight size={15} />
-                      </Link>
-                    ))
-                  ) : (
-                    <span>No matching events</span>
-                  )}
-                </div>
-              )}
-            </div>
-            <Link
-              className="icon-button notification-button"
-              to="/dashboard/delivery"
-              title="Ticket delivery"
-              aria-label="Ticket delivery"
-            >
-              <Send size={18} />
-            </Link>
+            {!scannerOnly && (
+              <div className="global-search">
+                <Search size={16} />
+                <input
+                  ref={searchRef}
+                  aria-label="Search events"
+                  placeholder="Search events..."
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                />
+                {query && (
+                  <div className="search-results">
+                    {found.length ? (
+                      found.map((event) => (
+                        <Link
+                          key={event.id}
+                          to={`/dashboard/events/${event.id}`}
+                          onClick={() => setQuery('')}
+                        >
+                          <CalendarDays size={16} />
+                          <span>
+                            {event.name}
+                            <small>{dateLabel(event.starts_at)}</small>
+                          </span>
+                          <ArrowUpRight size={15} />
+                        </Link>
+                      ))
+                    ) : (
+                      <span>No matching events</span>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+            {!scannerOnly && (
+              <Link
+                className="icon-button notification-button"
+                to="/dashboard/delivery"
+                title="Ticket delivery"
+                aria-label="Ticket delivery"
+              >
+                <Send size={18} />
+              </Link>
+            )}
             <span className="topbar-avatar">{user?.name.slice(0, 1)}</span>
           </div>
         </header>
@@ -884,7 +898,17 @@ function GuestsPage({ guests, events }: { guests: Guest[]; events: Event[] }) {
           className="button secondary"
           onClick={() =>
             downloadCSV('golden-guests.csv', [
-              ['Code', 'Event', 'Guest', 'Phone', 'Email', 'Ticket', 'Booking', 'Checked in'],
+              [
+                'Code',
+                'Event',
+                'Guest',
+                'Phone',
+                'Email',
+                'Ticket',
+                'Booking',
+                'Checked in',
+                'Admitted by',
+              ],
               ...filtered.map((g) => [
                 g.code,
                 g.event_name,
@@ -894,6 +918,7 @@ function GuestsPage({ guests, events }: { guests: Guest[]; events: Event[] }) {
                 g.ticket_type,
                 g.reference,
                 g.checked_in_at || '',
+                g.admitted_by || '',
               ]),
             ])
           }
@@ -959,6 +984,7 @@ function GuestsPage({ guests, events }: { guests: Guest[]; events: Event[] }) {
                   <td>
                     <Status status={g.checked_in_at ? 'checked_in' : 'not_arrived'} />
                     {g.checked_in_at && <small>{timeLabel(g.checked_in_at)}</small>}
+                    {g.admitted_by && <small>By {g.admitted_by}</small>}
                   </td>
                 </tr>
               ))}
@@ -1214,6 +1240,10 @@ function EventDetail({
           <ScanLine size={17} />
           Scan tickets
         </Link>
+        <Link className="button secondary" to={`/dashboard/team?event=${event.id}`}>
+          <ShieldCheck size={17} />
+          Gate team
+        </Link>
       </PageHeading>
       {error && <ErrorBox>{error}</ErrorBox>}
       <div className="event-detail-layout">
@@ -1318,6 +1348,13 @@ function EventDetail({
     </>
   );
 }
+export function AccountSettings() {
+  return (
+    <Shell title="Settings">
+      <SettingsPage />
+    </Shell>
+  );
+}
 function SettingsPage() {
   const { user, setUser, config, notify } = useApp();
   const navigate = useNavigate();
@@ -1366,7 +1403,7 @@ function SettingsPage() {
       <div className="settings-section">
         <div>
           <h2>Account</h2>
-          <p className="muted">Your organizer details</p>
+          <p className="muted">Your account details</p>
         </div>
         <form
           onSubmit={(e) => {
@@ -1438,54 +1475,56 @@ function SettingsPage() {
           </button>
         </form>
       </div>
-      <div className="settings-section">
-        <div>
-          <h2>Connections</h2>
+      {user?.role !== 'scanner' && (
+        <div className="settings-section">
+          <div>
+            <h2>Connections</h2>
+          </div>
+          <div className="connection-list">
+            <div>
+              <Smartphone size={21} />
+              <span>
+                Mobile money
+                <small>
+                  {config.paymentDriver === 'demo'
+                    ? 'Demo payments'
+                    : config.paymentDriver === 'disabled'
+                      ? 'Not connected'
+                      : 'Flutterwave'}
+                </small>
+              </span>
+              <Status
+                status={
+                  config.paymentDriver === 'demo'
+                    ? 'demo'
+                    : config.paymentDriver === 'disabled'
+                      ? 'paused'
+                      : 'published'
+                }
+              />
+            </div>
+            <div>
+              <Send size={21} />
+              <span>
+                Ticket delivery
+                <small>
+                  {config.deliveryDriver === 'outbox'
+                    ? 'Local outbox · sending not connected'
+                    : 'SMTP and Twilio'}
+                </small>
+              </span>
+              <Status status={config.deliveryDriver === 'outbox' ? 'outbox' : 'published'} />
+            </div>
+            <div>
+              <Banknote size={21} />
+              <span>
+                Organizer payouts<small>Not connected</small>
+              </span>
+              <Status status="paused" />
+            </div>
+          </div>
         </div>
-        <div className="connection-list">
-          <div>
-            <Smartphone size={21} />
-            <span>
-              Mobile money
-              <small>
-                {config.paymentDriver === 'demo'
-                  ? 'Demo payments'
-                  : config.paymentDriver === 'disabled'
-                    ? 'Not connected'
-                    : 'Flutterwave'}
-              </small>
-            </span>
-            <Status
-              status={
-                config.paymentDriver === 'demo'
-                  ? 'demo'
-                  : config.paymentDriver === 'disabled'
-                    ? 'paused'
-                    : 'published'
-              }
-            />
-          </div>
-          <div>
-            <Send size={21} />
-            <span>
-              Ticket delivery
-              <small>
-                {config.deliveryDriver === 'outbox'
-                  ? 'Local outbox · sending not connected'
-                  : 'SMTP and Twilio'}
-              </small>
-            </span>
-            <Status status={config.deliveryDriver === 'outbox' ? 'outbox' : 'published'} />
-          </div>
-          <div>
-            <Banknote size={21} />
-            <span>
-              Organizer payouts<small>Not connected</small>
-            </span>
-            <Status status="paused" />
-          </div>
-        </div>
-      </div>
+      )}
     </>
   );
 }

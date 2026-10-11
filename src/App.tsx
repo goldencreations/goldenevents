@@ -15,6 +15,11 @@ const OrderPage = lazy(() => import('./PublicPages').then((m) => ({ default: m.O
 const TicketPage = lazy(() => import('./PublicPages').then((m) => ({ default: m.TicketPage })));
 const ClaimPage = lazy(() => import('./TicketSharing').then((m) => ({ default: m.ClaimPage })));
 const StatusPage = lazy(() => import('./StatusPage').then((m) => ({ default: m.StatusPage })));
+const GateTeam = lazy(() => import('./GateTeam').then((m) => ({ default: m.GateTeam })));
+const ScannerInvite = lazy(() => import('./GateTeam').then((m) => ({ default: m.ScannerInvite })));
+const AccountSettings = lazy(() =>
+  import('./Dashboard').then((m) => ({ default: m.AccountSettings })),
+);
 
 export function App() {
   const location = useLocation();
@@ -71,7 +76,16 @@ function EventApp() {
     <Explore />
   );
   const protectedPage = (children: React.ReactNode) =>
-    user ? children : <Navigate to="/login" state={{ from: location.pathname }} replace />;
+    user ? (
+      user.role === 'scanner' &&
+      !['/dashboard/scan', '/dashboard/settings'].includes(location.pathname) ? (
+        <Navigate to="/dashboard/scan" replace />
+      ) : (
+        children
+      )
+    ) : (
+      <Navigate to="/login" state={{ from: location.pathname + location.search }} replace />
+    );
   return (
     <AppContext.Provider value={{ user, config, setUser, notify: setToast }}>
       <Suspense fallback={<Spinner label="Opening page" />}>
@@ -83,6 +97,9 @@ function EventApp() {
           <Route path="/order/:token" element={<OrderPage />} />
           <Route path="/ticket/:token" element={<TicketPage />} />
           <Route path="/claim/:token" element={<ClaimPage />} />
+          <Route path="/scanner-invite/:token" element={<ScannerInvite />} />
+          <Route path="/dashboard/team" element={protectedPage(<GateTeam />)} />
+          <Route path="/dashboard/settings" element={protectedPage(<AccountSettings />)} />
           <Route path="/dashboard/events/new" element={protectedPage(<EventEditor />)} />
           <Route path="/dashboard/events/:id/edit" element={protectedPage(<EventEditor />)} />
           <Route path="/dashboard/scan" element={protectedPage(<Scanner />)} />

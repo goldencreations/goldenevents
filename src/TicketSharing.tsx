@@ -251,12 +251,28 @@ export function ClaimPage() {
   const [cooldown, setCooldown] = useState(0);
   const claimKey = useRef(crypto.randomUUID());
   useEffect(() => {
+    let active = true;
     setLoading(true);
     setError('');
+    setData(null);
+    setRequested(false);
+    setCode('');
+    setDemoCode('');
+    setCooldown(0);
+    claimKey.current = crypto.randomUUID();
     api<ClaimData>(`/claims/${token}`)
-      .then(setData)
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
+      .then((data) => {
+        if (active) setData(data);
+      })
+      .catch((e) => {
+        if (active) setError(e.message);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
   }, [token]);
   useEffect(() => {
     if (!cooldown) return;
@@ -291,6 +307,13 @@ export function ClaimPage() {
           </div>
         ) : (
           <section className="claim-tool">
+            <div className="claim-heading">
+              <span className="eyebrow">A PLACE RESERVED FOR YOU</span>
+              <span>
+                <ShieldCheck size={16} />
+                Ticket invitation
+              </span>
+            </div>
             <EventImage event={data.event} className="claim-cover" />
             <div className="claim-body">
               <span className="eyebrow">{data.ticket_type}</span>

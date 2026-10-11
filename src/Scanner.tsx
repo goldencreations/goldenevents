@@ -6,6 +6,7 @@ import { api, send, dateLabel, shortPhone } from './api';
 import { Shell } from './Dashboard';
 import { ErrorBox, Spinner } from './ui';
 import type { Event } from './types';
+import { useApp } from './context';
 type Admission = {
   code: string;
   ticket_type: string;
@@ -15,6 +16,7 @@ type Admission = {
 };
 
 export function Scanner() {
+  const { user } = useApp();
   const [params] = useSearchParams();
   const [events, setEvents] = useState<Event[]>([]),
     [eventId, setEventId] = useState(params.get('event') || ''),
@@ -30,10 +32,10 @@ export function Scanner() {
     scanBusy = useRef(false),
     lastScan = useRef('');
   useEffect(() => {
-    api<{ events: Event[] }>('/organizer/events')
+    api<{ events: Event[] }>('/scanner/events')
       .then((d) => {
         setEvents(d.events.filter((e) => e.status !== 'cancelled'));
-        if (!eventId)
+        if (!d.events.some((e) => e.id === eventId))
           setEventId(d.events.find((e) => e.status === 'published')?.id || d.events[0]?.id || '');
       })
       .catch((e) => setError(e.message))
@@ -47,7 +49,7 @@ export function Scanner() {
     setError('');
     setResult(null);
     try {
-      const data = await send<{ ticket: Admission }>('/organizer/check-in', {
+      const data = await send<{ ticket: Admission }>('/scanner/check-in', {
         event_id: eventId,
         code: value,
       });
@@ -69,7 +71,7 @@ export function Scanner() {
         if (disposed || !video.current) return;
         const reader = new BrowserQRCodeReader();
         const c = await reader.decodeFromVideoDevice(undefined, video.current, (result) => {
-          if (result && !scanBusy.current && result.getText() !== lastScan.current) {
+          if (!disposed && result && !scanBusy.current && result.getText() !== lastScan.current) {
             lastScan.current = result.getText();
             admit(result.getText());
           }
@@ -89,10 +91,12 @@ export function Scanner() {
   }, [camera, eventId]);
   return (
     <Shell title="Gate scanner">
-      <Link to="/dashboard/guests" className="back-link">
-        <ArrowLeft size={15} />
-        Guest list
-      </Link>
+      {user?.role !== 'scanner' && (
+        <Link to="/dashboard/guests" className="back-link">
+          <ArrowLeft size={15} />
+          Guest list
+        </Link>
+      )}
       <div className="page-heading">
         <div>
           <h1>Gate scanner</h1>
@@ -108,11 +112,14 @@ export function Scanner() {
               Event
               <select
                 value={eventId}
+                disabled={busy}
                 onChange={(e) => {
                   setEventId(e.target.value);
                   setResult(null);
                   setError('');
                   lastScan.current = '';
+                  setHistory([]);
+                  setCamera(false);
                 }}
                 aria-label="Event to scan"
               >

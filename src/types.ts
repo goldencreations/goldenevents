@@ -60,6 +60,7 @@ export type Order = {
   payment_uncertain?: boolean;
 };
 export type Guest = {
+  admitted_by?: string;
   holder_name: string;
   reference: string;
   code: string;

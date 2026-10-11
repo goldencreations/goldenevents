@@ -250,6 +250,25 @@ test('image renderer handles escaped labels and missing covers', async (t) => {
   assert.equal(meta.height, 1280);
 });
 
+test('long ticket labels grow the image without squeezing the QR or clipping holder details', async (t) => {
+  const { config, event } = fixture(t);
+  const png = await renderTicketImage(
+    { ...event, name: 'W'.repeat(100), venue: 'W'.repeat(120), city: 'W'.repeat(80), image: '' },
+    {
+      code: 'GE-SAMPLE',
+      token: 'sample',
+      ticket_type: 'W'.repeat(40),
+      holder_name: 'W'.repeat(80),
+    },
+    config,
+  );
+  const meta = await sharp(png).metadata();
+  assert.equal(meta.width, 800);
+  assert.ok(meta.height > 1280);
+  const pixels = await sharp(png).raw().toBuffer();
+  assert.ok(pixels.some((value) => value < 50));
+});
+
 test('private ticket image endpoint rejects cancelled and rotated credentials', async (t) => {
   const { db, config, event } = fixture(t);
   const server = createApp(db, config).listen(0, '127.0.0.1');

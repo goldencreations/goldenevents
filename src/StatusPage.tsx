@@ -114,7 +114,7 @@ export function StatusPage() {
     <div className="service-status-page">
       <header className="service-status-header">
         <a href="/" aria-label="Golden Events home">
-          <Brand />
+          <Brand ticketLogo />
         </a>
         <a href="/">
           Events <ArrowUpRight size={15} />
@@ -123,7 +123,7 @@ export function StatusPage() {
       <main className="service-status-main">
         <div className="service-status-title">
           <div>
-            <span className="eyebrow">GOLDEN EVENTS</span>
+            <span className="eyebrow">LIVE SERVICE HEALTH</span>
             <h1>System status</h1>
           </div>
           <button
@@ -248,7 +248,7 @@ export function StatusPage() {
         </section>
       </main>
       <footer className="service-status-footer">
-        <span>Golden Events</span>
+        <Brand ticketLogo />
         <span>Africa/Dar es Salaam · EAT</span>
       </footer>
     </div>

@@ -43,9 +43,43 @@ from the demo database.
 - Unique QR tickets, complete event-branded PNG downloads, print, public bearer ticket and order links.
 - Individual ticket invitations with phone verification, recipient-only credentials, and independent admission.
 - Phone-camera QR scanner, manual admission, duplicate-admission rejection.
+- Independent scanner accounts, event-scoped crew invitations, revocation, and admission operator records.
 - Sales dashboard, orders, guests, CSV exports, revenue history, platform administration.
 - Durable SMS/email/WhatsApp outbox and configurable SMTP/Twilio delivery.
 - Docker, Nginx wildcard configuration, database backup command, automated checks.
+
+## Gate Teams
+
+Open **Gate team** in the organizer workspace, choose an event, and enter the
+scanner's name and email. Copy the generated invitation and share it privately
+with that person; invitations are not automatically emailed. The single-use link
+expires after seven days. New staff set their own password and get a scanner-only
+account. Existing users must sign in with the invited email before accepting;
+their existing password and role are not changed.
+
+Platform administrators use the same screen to assign Golden Creations staff to
+any organizer's event. A staff member can accept invitations for multiple events
+using one account. Assignments created by administrators are labeled Golden
+Creations; assignments created by owners are labeled Organizer crew. This is a
+permission workflow, not a staffing marketplace or automatic staff booking.
+
+Scanners use `/dashboard/scan` after signing in. `/api/scanner/events` exposes
+only their assigned events (and any events they own), without sales figures,
+orders, or buyer exports. Admission is verified on the server against current
+assignments on every request. Revoking one assignment immediately blocks new
+scans for that event, including in an already-open browser, while preserving
+other assignments. Scanner-only accounts cannot access organizer endpoints or
+administration. They can manage their own profile and password under Settings.
+
+Only one successful admission is allowed per paid ticket. Each admission stores
+the operator's account ID, and the organizer's guest list/export shows the name.
+Scanning requires internet and a camera-capable HTTPS browser, with a manual
+code fallback. Ticket authenticity is not proof of the holder's identity;
+re-entry, offline check-in, and phone-device binding are not implemented.
+
+Ticket PNG downloads and Meta WhatsApp delivery use the same private server
+renderer. Claimed tickets retain their holder's name; revoked ticket credentials
+cannot download a valid image. No ticket images are published into public uploads.
 
 ## Service Status
 

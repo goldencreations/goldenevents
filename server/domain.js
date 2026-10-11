@@ -348,14 +348,20 @@ export function completeOrder(db, orderId, config) {
 }
 
 export function checkIn(db, user, eventId, rawCode) {
-  const event = db.prepare('SELECT * FROM events WHERE id=? AND owner_id=?').get(eventId, user.id);
-  if (!event) throw new HttpError(404, 'Event not found.');
-  if (event.status === 'cancelled') throw new HttpError(409, 'This event is cancelled.');
   const code = String(rawCode || '')
     .trim()
     .split('/')
     .pop();
   return transaction(db, () => {
+    const event = db
+      .prepare(
+        `SELECT * FROM events e WHERE e.id=? AND (e.owner_id=? OR EXISTS (
+      SELECT 1 FROM event_scanners s WHERE s.event_id=e.id AND s.user_id=? AND s.revoked_at IS NULL
+    ))`,
+      )
+      .get(eventId, user.id, user.id);
+    if (!event) throw new HttpError(404, 'No scanner access to this event.');
+    if (event.status === 'cancelled') throw new HttpError(409, 'This event is cancelled.');
     const ticket = db
       .prepare(
         'SELECT t.*,o.status,o.phone,o.reference,tt.name AS ticket_type FROM tickets t JOIN orders o ON o.id=t.order_id JOIN ticket_types tt ON tt.id=o.ticket_type_id WHERE t.token=? OR t.code=?',

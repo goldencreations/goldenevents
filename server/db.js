@@ -63,6 +63,20 @@ export function openDatabase(dataDir) {
     CREATE INDEX IF NOT EXISTS idx_orders_event ON orders(event_id, status);
     CREATE INDEX IF NOT EXISTS idx_orders_type ON orders(ticket_type_id, status);
     CREATE INDEX IF NOT EXISTS idx_tickets_event ON tickets(event_id);
+    CREATE TABLE IF NOT EXISTS event_scanners (
+      event_id TEXT NOT NULL REFERENCES events(id), user_id TEXT NOT NULL REFERENCES users(id),
+      assigned_by TEXT NOT NULL REFERENCES users(id), source TEXT NOT NULL,
+      created_at TEXT NOT NULL, revoked_at TEXT, PRIMARY KEY(event_id,user_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_scanner_user ON event_scanners(user_id,revoked_at);
+    CREATE TABLE IF NOT EXISTS scanner_invites (
+      id TEXT PRIMARY KEY, event_id TEXT NOT NULL REFERENCES events(id),
+      token_hash TEXT NOT NULL UNIQUE, name TEXT NOT NULL, email TEXT NOT NULL,
+      created_by TEXT NOT NULL REFERENCES users(id), source TEXT NOT NULL,
+      expires_at INTEGER NOT NULL, created_at TEXT NOT NULL,
+      accepted_at TEXT, cancelled_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_scanner_invites_event ON scanner_invites(event_id,email);
   `);
   // Additive migrations preserve tickets already issued by older versions.
   transaction(db, () => {

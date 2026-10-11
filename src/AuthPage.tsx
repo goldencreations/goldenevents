@@ -16,7 +16,13 @@ export function AuthPage({ register = false }: { register?: boolean }) {
     [busy, setBusy] = useState(false),
     [error, setError] = useState(''),
     [visible, setVisible] = useState(false);
-  if (user) return <Navigate to="/dashboard" replace />;
+  if (user)
+    return (
+      <Navigate
+        to={location.state?.from || (user.role === 'scanner' ? '/dashboard/scan' : '/dashboard')}
+        replace
+      />
+    );
   const authenticate = async (demo = false) => {
     setBusy(true);
     setError('');
@@ -26,7 +32,9 @@ export function AuthPage({ register = false }: { register?: boolean }) {
         { email, password, name },
       );
       setUser(result.user);
-      navigate(location.state?.from || '/dashboard');
+      navigate(
+        location.state?.from || (result.user.role === 'scanner' ? '/dashboard/scan' : '/dashboard'),
+      );
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -40,7 +48,9 @@ export function AuthPage({ register = false }: { register?: boolean }) {
           <Brand ticketLogo />
         </Link>
         <div className="auth-form">
-          <span className="eyebrow">THE ORGANIZER WORKSPACE</span>
+          <span className="eyebrow">
+            {register ? 'THE ORGANIZER WORKSPACE' : 'YOUR GOLDEN WORKSPACE'}
+          </span>
           <h1>{register ? 'Make your next event golden.' : 'Welcome back.'}</h1>
           <p>
             {register

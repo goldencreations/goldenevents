@@ -32,13 +32,13 @@ export function PublicHeader() {
   return (
     <header className="public-header">
       <a href={config.publicOrigin}>
-          <Brand ticketLogo />
+        <Brand ticketLogo />
       </a>
       <nav>
         <a href={config.publicOrigin}>Explore events</a>
         <a
           className="button secondary"
-          href={`${config.appOrigin}${user ? '/dashboard' : '/login'}`}
+          href={`${config.appOrigin}${user ? (user.role === 'scanner' ? '/dashboard/scan' : '/dashboard') : '/login'}`}
         >
           {user ? 'My workspace' : 'Create an event'}
           <ArrowUpRight size={16} />
@@ -596,9 +596,19 @@ export function TicketContent({ token, compact = false }: { token: string; compa
     [saving, setSaving] = useState(false);
   const { notify } = useApp();
   useEffect(() => {
+    let active = true;
+    setData(null);
+    setError('');
     api<TicketData>(`/tickets/${token}`)
-      .then(setData)
-      .catch((e) => setError(e.message));
+      .then((data) => {
+        if (active) setData(data);
+      })
+      .catch((e) => {
+        if (active) setError(e.message);
+      });
+    return () => {
+      active = false;
+    };
   }, [token]);
   if (error) return <ErrorBox>{error}</ErrorBox>;
   if (!data) return <Spinner label="Loading ticket" />;
@@ -607,14 +617,15 @@ export function TicketContent({ token, compact = false }: { token: string; compa
     <article
       className={`golden-ticket ${compact ? 'compact-ticket' : ''} ${!ticket.valid ? 'invalid-ticket' : ''}`}
     >
+      <div className="ticket-topline">
+        <Brand ticketLogo />
+        <span className="ticket-class">{ticket.ticket_type}</span>
+      </div>
       <div className="ticket-art">
         <EventImage event={event} />
-        <div>
-          <span className="eyebrow">{ticket.ticket_type}</span>
-          <h2>{event.name}</h2>
-        </div>
       </div>
       <div className="ticket-info">
+        <h2>{event.name}</h2>
         {ticket.holder_name && (
           <div className="ticket-holder">
             <ShieldCheck size={15} />
@@ -635,9 +646,6 @@ export function TicketContent({ token, compact = false }: { token: string; compa
             {event.venue}, {event.city}
           </span>
         </div>
-        <div className="ticket-brand-lockup">
-          <Brand ticketLogo />
-        </div>
       </div>
       <div className="ticket-perforation" />
       <div className="ticket-qr">
@@ -650,7 +658,10 @@ export function TicketContent({ token, compact = false }: { token: string; compa
           </div>
         )}
         <strong className="mono">{ticket.code}</strong>
-        <span>
+        <span
+          className={`ticket-entry-state ${!ticket.valid ? 'is-invalid' : ticket.checked_in_at ? 'is-used' : 'is-ready'}`}
+        >
+          {ticket.valid ? <Check size={14} /> : <AlertCircle size={14} />}
           {!ticket.valid
             ? 'Not valid for entry'
             : ticket.checked_in_at
@@ -675,7 +686,7 @@ export function TicketContent({ token, compact = false }: { token: string; compa
           onClick={async () => {
             setSaving(true);
             try {
-              await saveTicketImage(event, ticket, qr);
+              await saveTicketImage(ticket.code, ticket.token);
             } catch {
               notify('Could not save the ticket. You can print it or keep the ticket link.');
             } finally {
@@ -716,6 +727,10 @@ export function TicketPage() {
     <div className="public-page ticket-page">
       <PublicHeader />
       <main className="single-ticket">
+        <div className="ticket-page-heading">
+          <span className="eyebrow">YOUR GOLDEN TICKET</span>
+          <h1>See you there.</h1>
+        </div>
         <TicketContent token={token!} />
       </main>
       <PublicFooter />

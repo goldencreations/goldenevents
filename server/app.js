@@ -26,6 +26,15 @@ import { verifyEcofySignature } from './ecofy.js';
 import { createHealthMonitor } from './health.js';
 import { renderPage } from './metadata.js';
 import {
+  scannerEvents,
+  gateTeam,
+  inviteScanner,
+  scannerInvitation,
+  acceptScanner,
+  revokeScanner,
+  cancelScannerInvite,
+} from './scanners.js';
+import {
   sharingMode,
   bookingTickets,
   createInvite,
@@ -177,6 +186,63 @@ export function createApp(db, config, health = createHealthMonitor(db, config)) 
     }),
   );
   app.get('/api/auth/me', (req, res) => res.json({ user: req.user ? publicUser(req.user) : null }));
+  // Scanner-only accounts cannot reach organizer finance, guest exports, or event edits.
+  app.use('/api/organizer', auth, (req, _res, next) => {
+    if (!['organizer', 'admin'].includes(req.user.role))
+      throw new HttpError(403, 'Scanner access only.');
+    next();
+  });
+  app.get('/api/scanner/events', auth, (req, res) =>
+    res.json({ events: scannerEvents(db, req.user) }),
+  );
+  app.post('/api/scanner/check-in', auth, (req, res) => {
+    const input = z
+      .object({ event_id: z.string().min(1).max(80), code: z.string().trim().min(1).max(512) })
+      .safeParse(req.body);
+    if (!input.success) throw new HttpError(400, 'Choose an event and enter a ticket code.');
+    const ticket = checkIn(db, req.user, input.data.event_id, input.data.code);
+    res.json({ ticket: { ...ticket, phone: maskedPhone(ticket.phone) } });
+  });
+  app.get('/api/gate/events', auth, (req, res) => {
+    if (!['organizer', 'admin'].includes(req.user.role))
+      throw new HttpError(403, 'Organizer access required.');
+    const rows =
+      req.user.role === 'admin'
+        ? db.prepare('SELECT id,name,starts_at,status FROM events ORDER BY starts_at DESC').all()
+        : db
+            .prepare(
+              'SELECT id,name,starts_at,status FROM events WHERE owner_id=? ORDER BY starts_at DESC',
+            )
+            .all(req.user.id);
+    res.json({ events: rows });
+  });
+  app.get('/api/gate/events/:id/team', auth, (req, res) =>
+    res.json(gateTeam(db, req.user, req.params.id)),
+  );
+  app.post('/api/gate/events/:id/invites', auth, (req, res) =>
+    res.status(201).json(inviteScanner(db, config, req.user, req.params.id, req.body)),
+  );
+  app.delete('/api/gate/events/:id/scanners/:userId', auth, (req, res) => {
+    revokeScanner(db, req.user, req.params.id, req.params.userId);
+    res.json({ ok: true });
+  });
+  app.delete('/api/gate/events/:id/invites/:inviteId', auth, (req, res) => {
+    cancelScannerInvite(db, req.user, req.params.id, req.params.inviteId);
+    res.json({ ok: true });
+  });
+  app.get('/api/scanner-invites/:token', authLimit, (req, res) => {
+    const i = scannerInvitation(db, req.params.token);
+    res.json({
+      name: i.name,
+      email: i.email,
+      event_name: i.event_name,
+      expires_at: i.expires_at,
+      existing_account: !!db.prepare('SELECT id FROM users WHERE email=?').get(i.email),
+    });
+  });
+  app.post('/api/scanner-invites/:token/accept', authLimit, (req, res) =>
+    login(res, acceptScanner(db, req.params.token, req.user, req.body)),
+  );
   app.post('/api/auth/register', authLimit, (req, res) => {
     const parsed = z
       .object({
@@ -509,7 +575,7 @@ export function createApp(db, config, health = createHealthMonitor(db, config)) 
     res.json({
       guests: db
         .prepare(
-          "SELECT t.code,t.checked_in_at,t.event_id,COALESCE(t.holder_phone,o.phone) AS phone,COALESCE(t.holder_name,'') AS holder_name,CASE WHEN t.claimed_at IS NULL THEN o.email ELSE '' END AS email,o.reference,e.name AS event_name,tt.name AS ticket_type FROM tickets t JOIN orders o ON o.id=t.order_id JOIN events e ON e.id=t.event_id JOIN ticket_types tt ON tt.id=o.ticket_type_id WHERE e.owner_id=? AND o.status=? ORDER BY t.created_at DESC",
+          "SELECT t.code,t.checked_in_at,t.event_id,COALESCE(u.name,'') AS admitted_by,COALESCE(t.holder_phone,o.phone) AS phone,COALESCE(t.holder_name,'') AS holder_name,CASE WHEN t.claimed_at IS NULL THEN o.email ELSE '' END AS email,o.reference,e.name AS event_name,tt.name AS ticket_type FROM tickets t JOIN orders o ON o.id=t.order_id JOIN events e ON e.id=t.event_id JOIN ticket_types tt ON tt.id=o.ticket_type_id LEFT JOIN users u ON u.id=t.checked_in_by WHERE e.owner_id=? AND o.status=? ORDER BY t.created_at DESC",
         )
         .all(req.user.id, 'paid'),
     }),
@@ -654,9 +720,8 @@ export function createApp(db, config, health = createHealthMonitor(db, config)) 
             )
             .get(slug)
         : null;
-      const privatePage = /^\/(?:ticket|order|claim|dashboard|login|register)(?:\/|$)/.test(
-        req.path,
-      );
+      const privatePage =
+        /^\/(?:ticket|order|claim|scanner-invite|dashboard|login|register)(?:\/|$)/.test(req.path);
       res
         .status(slug && !event ? 404 : 200)
         .type('html')
