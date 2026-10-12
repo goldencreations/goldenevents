@@ -235,6 +235,11 @@ export function openDatabase(dataDir) {
         ON ticket_verification_sends(phone_hash, created_at);
     `);
     for (const [table, fields] of Object.entries({
+      payout_quotes: {
+        skip_account_check: 'INTEGER NOT NULL DEFAULT 0',
+        account_name_source: 'TEXT',
+        destination_otp_challenge_id: 'TEXT REFERENCES otp_challenges(id)',
+      },
       payout_challenges: {
         quote_id: 'TEXT REFERENCES payout_quotes(id)',
         payout_fee: 'INTEGER NOT NULL DEFAULT 0',

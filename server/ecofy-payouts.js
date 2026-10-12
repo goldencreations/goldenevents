@@ -16,6 +16,9 @@ export async function ecofyQuote(config, quote) {
       type: quote.destination_type,
       channel: quote.channel,
       account: quote.account,
+      ...(quote.skip_account_check
+        ? { skip_account_check: true, account_name: quote.account_name }
+        : {}),
     }),
   });
   if (
@@ -30,6 +33,9 @@ export async function ecofyQuote(config, quote) {
     typeof q.account_name !== 'string' ||
     !q.account_name.trim() ||
     q.account_name.length > 200 ||
+    !['rail', 'cache', 'merchant'].includes(q.account_name_source) ||
+    (q.account_name_source === 'merchant' &&
+      (!quote.skip_account_check || q.account_name.trim() !== quote.account_name)) ||
     !Number.isFinite(Date.parse(q.expires_at))
   )
     throw new Error('Ecofy payout quote verification mismatch.');

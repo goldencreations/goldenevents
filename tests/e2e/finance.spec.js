@@ -19,7 +19,7 @@ test('HTML gateway errors show a safe payout message and quote retries preserve 
   await page.getByLabel('Amount to recipient (TZS)').fill('1000');
   await page.getByLabel('Mobile-money number').fill('0712345678');
   await page.getByLabel('Your account password').fill('GoldenDemo2026!');
-  const button = page.getByRole('button', { name: 'Check recipient & fee' });
+  const button = page.getByRole('button', { name: 'Continue', exact: true });
   await button.click();
   await expect(page.getByRole('dialog')).toContainText(
     'The withdrawal service is temporarily unavailable.',
@@ -72,11 +72,23 @@ test('fee allowance and quote coverage remain clear on desktop and mobile withou
           fee: 10,
           total: 1860,
           account_name: 'TEST RECIPIENT',
+          account_name_source: 'merchant',
+          destination_verification_required: false,
           account_last4: '5678',
           channel: 'MPESA',
           expires_at: Date.now() + 300000,
           demo: false,
         },
+      },
+    }),
+  );
+  await page.route('**/api/organizer/payouts/code', (route) =>
+    route.fulfill({
+      json: {
+        challenge_id: 'allowance-challenge',
+        mode: 'nextsms',
+        expires_at: Date.now() + 300000,
+        verification_phone: '+255 *** *** 5678',
       },
     }),
   );
@@ -96,7 +108,7 @@ test('fee allowance and quote coverage remain clear on desktop and mobile withou
   await page.getByLabel('Amount to recipient (TZS)').fill('1850');
   await page.getByLabel('Mobile-money number').fill('0712345678');
   await page.getByLabel('Your account password').fill(password);
-  await page.getByRole('button', { name: 'Check recipient & fee' }).click();
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await expect(page.getByText('TEST RECIPIENT', { exact: true })).toBeVisible();
   await expect(
     page.locator('.payout-confirmation > div').filter({ hasText: 'Remaining earnings' }),
@@ -112,7 +124,7 @@ test('fee allowance and quote coverage remain clear on desktop and mobile withou
   await page.screenshot({ path: 'test-results/fee-allowance-quote-desktop.png', fullPage: true });
 });
 
-test('quoted demo payout shows verified name, separate fees, OTP and final outcome on desktop/mobile', async ({
+test('withdrawal proceeds directly to fresh OTP with entered recipient, fees and final confirmation on desktop/mobile', async ({
   page,
 }) => {
   const errors = [];
@@ -163,20 +175,20 @@ test('quoted demo payout shows verified name, separate fees, OTP and final outco
   await page.getByLabel('Amount to recipient (TZS)').fill('10000');
   await page.getByLabel('Mobile-money number').fill('0712345678');
   await page.getByLabel('Your account password').fill(password);
-  await page.getByRole('button', { name: 'Check recipient & fee' }).click();
-  await expect(page.getByText('DEMO VERIFIED RECIPIENT', { exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Send code', exact: true })).toBeDisabled();
+  const codeResponse = page.waitForResponse(
+    (r) => r.url().endsWith('/api/organizer/payouts/code') && r.request().method() === 'POST',
+  );
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  const challenge = await (await codeResponse).json();
+  await expect(page.getByRole('heading', { name: 'Confirm your payout' })).toBeVisible();
+  await expect(page.getByText('Finance Organizer', { exact: true }).last()).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Simulate payout', exact: true })).toBeDisabled();
   await expect(page.locator('.payout-confirmation')).toContainText('10,100');
   await page.screenshot({ path: 'test-results/payout-quote-desktop.png', fullPage: true });
   await page.screenshot({ path: 'test-results/payout-quote-preview.png' });
   await page.setViewportSize({ width: 375, height: 812 });
   await page.screenshot({ path: 'test-results/payout-quote-mobile.png', fullPage: true });
-  await page.getByRole('checkbox', { name: /I recognize this account holder/ }).check();
-  const codeResponse = page.waitForResponse(
-    (r) => r.url().endsWith('/api/organizer/payouts/code') && r.request().method() === 'POST',
-  );
-  await page.getByRole('button', { name: 'Send code', exact: true }).click();
-  const challenge = await (await codeResponse).json();
+  await page.getByRole('checkbox', { name: /I confirm the recipient/ }).check();
   await expect(page.getByRole('heading', { name: 'Confirm your payout' })).toBeVisible();
   await page.getByLabel('Verification code').fill(challenge.demo_code);
   const submitBox = await page.getByRole('button', { name: 'Simulate payout' }).boundingBox();
@@ -200,7 +212,85 @@ test('quoted demo payout shows verified name, separate fees, OTP and final outco
   expect(errors).toEqual([]);
 });
 
-test('bank quotes preserve the account and require a fresh verified name after restarting', async ({
+test('alternate mobile number verification precedes fresh organizer authorization without a name lookup screen', async ({
+  page,
+}) => {
+  await page.goto('/login');
+  await page.getByRole('button', { name: 'Open demo workspace' }).click();
+  const calls = [];
+  await page.route('**/api/organizer/payouts/quote', (route) =>
+    route.fulfill({
+      json: {
+        quote: {
+          id: 'destination-quote',
+          amount: 1000,
+          fee: 100,
+          total: 1100,
+          account_name: 'Friend',
+          account_name_source: 'merchant',
+          account_last4: '5678',
+          channel: 'MPESA',
+          destination_type: 'mobile_money',
+          expires_at: Date.now() + 300000,
+          destination_verification_required: true,
+          demo: false,
+        },
+      },
+    }),
+  );
+  await page.route('**/api/organizer/payouts/destination/code', (route) => {
+    calls.push('destination-code');
+    return route.fulfill({
+      json: {
+        challenge_id: 'destination-challenge',
+        phone: '+255 *** *** 5678',
+        expires_at: Date.now() + 300000,
+      },
+    });
+  });
+  await page.route('**/api/organizer/payouts/destination/verify', (route) => {
+    expect(route.request().postDataJSON()).toMatchObject({
+      quote_id: 'destination-quote',
+      challenge_id: 'destination-challenge',
+      code: '123456',
+    });
+    calls.push('destination-verified');
+    return route.fulfill({ json: { verified: true } });
+  });
+  await page.route('**/api/organizer/payouts/code', (route) => {
+    calls.push('organizer-code');
+    return route.fulfill({
+      json: {
+        challenge_id: 'organizer-challenge',
+        verification_phone: '+255 *** *** 1701',
+        expires_at: Date.now() + 300000,
+        mode: 'nextsms',
+      },
+    });
+  });
+  await page.goto('/dashboard/revenue');
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.getByRole('button', { name: 'Request payout', exact: true }).click();
+  await page.getByLabel('Amount to recipient (TZS)').fill('1000');
+  await page.getByLabel('Mobile-money number').fill('0712345678');
+  await page.getByLabel('Recipient account name').fill('Friend');
+  await page.getByLabel('Your account password').fill('GoldenDemo2026!');
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Verify payout number' })).toBeVisible();
+  await expect(page.getByRole('dialog')).toContainText('Recipient name you entered');
+  await expect(page.getByRole('dialog')).not.toContainText('Verified by Ecofy');
+  expect(calls).toEqual(['destination-code']);
+  await page.screenshot({ path: 'test-results/payout-destination-otp-mobile.png' });
+  await page.getByLabel('Payout number verification code').fill('123456');
+  await page.getByRole('button', { name: 'Verify number', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Confirm your payout' })).toBeVisible();
+  await expect(page.getByRole('dialog')).toContainText('+255 *** *** 1701');
+  expect(calls).toEqual(['destination-code', 'destination-verified', 'organizer-code']);
+  await page.screenshot({ path: 'test-results/payout-primary-otp-mobile.png' });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test('bank withdrawals preserve leading zeros and require a fresh code after restarting', async ({
   page,
 }) => {
   const headers = { Origin: 'http://localhost:5181' };
@@ -213,15 +303,13 @@ test('bank quotes preserve the account and require a fresh verified name after r
   await page.getByLabel('Bank', { exact: true }).selectOption('CRDB');
   await page.getByLabel('Bank account number').fill('0012345678');
   await page.getByLabel('Your account password').fill('GoldenDemo2026!');
-  await page.getByRole('button', { name: 'Check recipient & fee' }).click();
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await expect(page.getByText(/CRDB Bank · account ending 5678/)).toBeVisible();
   await page.setViewportSize({ width: 375, height: 812 });
   await page.screenshot({ path: 'test-results/bank-payout-mobile.png', fullPage: true });
   await page.getByRole('button', { name: 'Start again', exact: true }).click();
   await expect(page.getByLabel('Bank account number')).toHaveValue('0012345678');
-  await expect(page.getByRole('checkbox', { name: /I recognize this account holder/ })).toHaveCount(
-    0,
-  );
+  await expect(page.getByRole('checkbox', { name: /I confirm the recipient/ })).toHaveCount(0);
   await page.getByRole('button', { name: 'Cancel', exact: true }).click();
   const finance = await (await page.request.get('/api/organizer/finance', { headers })).json();
   expect(finance.payout_mode).toBe('demo');

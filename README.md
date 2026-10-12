@@ -320,12 +320,16 @@ batches. Cancelled events are held, and Golden Events' snapshotted cut is exclud
 from organizer credit. `GET /v1/balance` is checked separately to cap transfers to
 available provider funds. No other organizer can spend the merchant's shared cash.
 
-The organizer enters amount and destination (documented channels: MPESA,
-AIRTELMONEY, CRDB, NMB) and reauthenticates with their password. A durable,
-idempotent `POST /v1/payouts/quote` resolves the account name, last four digits,
-fee and total. No money is moved by quoting. The organizer must recognize and
-confirm that name and fee before an OTP can be sent. The OTP binds the
-quote, verified name, destination, amount and withdrawal fee. Expired quotes require
+The organizer enters amount, recipient account name and destination (documented
+channels: MPESA, AIRTELMONEY, CRDB, NMB) and reauthenticates with their password.
+A durable, idempotent `POST /v1/payouts/quote` sends `skip_account_check: true`
+and `account_name`, bypassing the recipient-name lookup. The API still requires
+the resulting quote ID for payout creation; quoting never transfers money.
+`account_name_source` is persisted as `rail`, `cache`, or `merchant`; merchant
+names are displayed as entered names, never as provider-verified identities.
+The form proceeds directly to fresh SMS verification, showing destination,
+actual fee and total for consent before final authorization. The OTP binds the
+quote, recipient name, destination, amount and withdrawal fee. Expired quotes require
 a new quote and fresh confirmation; they are never silently replaced. Bank account
 numbers preserve leading zeroes. NextSMS (or the explicit legacy SMTP option) is required for live OTPs.
 
@@ -338,6 +342,16 @@ reference, then GET reconciliation or a retry with the identical key. Unknown
 outcomes remain reserved, including after quote expiry or a restart; they cannot
 be cancelled or manually recorded as another transfer. Jobs retry every 5 seconds
 to 5 minutes and never release money simply because retries were exhausted.
+
+Production withdrawals require NextSMS. Each withdrawal gets a fresh primary-phone
+authorization code. If a mobile-money destination differs from the verified
+organizer phone, a separate fresh code verifies access to that destination first.
+Its proof is owner/quote/destination/amount/fee/password bound, expires within five
+minutes, and is checked again at authorization and transfer confirmation. It cannot
+authorize a different quote, replace the primary-phone OTP, or change the account's
+security phone. SMS proves access to a phone, not legal identity or a bank account.
+Quote errors `account_not_found`, `lookup_unavailable`, and `account_name_required`
+are mapped to safe actionable messages. Payout request/response formats are unchanged.
 
 Organizer history shows recipient amount and withdrawal fee separately; payout
 debits and reservations include both. Manual administration remains available for

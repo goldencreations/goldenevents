@@ -69,7 +69,9 @@ export async function issueOtp(db, config, context, options = {}) {
   });
   const label = {
     phone_verification: 'phone verification',
-    payout: `payout${options.amount ? ` TZS ${options.amount}` : ''}`,
+    payout: options.destinationVerification
+      ? 'payout number verification'
+      : `payout${options.amount ? ` TZS ${options.amount}` : ''}`,
     ticket_claim: 'ticket claim',
   }[context.purpose];
   const minutes = Math.max(1, Math.ceil((expires - now) / 60000));

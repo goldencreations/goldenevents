@@ -2,6 +2,17 @@
 
 Golden Events generates and verifies its own OTPs; NextSMS transports SMS only.
 This integration covers security-phone enrollment, organizer payouts and shared-ticket claims.
+
+Automatic withdrawals now skip Ecofy recipient-name lookups using the revised
+quote contract. Every withdrawal still requires fresh primary-phone authorization.
+For a different mobile-money destination, `/api/organizer/payouts/destination/code`
+and `/api/organizer/payouts/destination/verify` establish separate fresh ownership
+proof before the primary authorization code is issued. Proof binds the owner,
+quote, number, channel, amount, fee and current account-security state. It expires
+within five minutes and cannot be reused for another withdrawal or enroll a
+security phone. Bank destinations retain primary-phone authorization; SMS cannot
+verify a bank account or a person's legal identity. Recipient-name source is
+displayed honestly as rail, cache, or merchant-provided.
 It does not add passwordless login, password reset or SMS delivery of purchased tickets.
 
 ## Live Setup

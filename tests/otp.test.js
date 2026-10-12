@@ -31,6 +31,8 @@ import {
   confirmPayout,
   organizerFinance,
   requestPayoutQuote,
+  requestPayoutDestinationCode,
+  verifyPayoutDestination,
   reconcileOrder,
 } from '../server/finance.js';
 import { createHealthMonitor } from '../server/health.js';
@@ -561,6 +563,7 @@ test('quoted payout SMS authorizes the exact quote plus withdrawal fee and prese
   f.sale();
   await f.verifyPhone();
   const q = await requestPayoutQuote(f.db, f.config, f.user, {
+    account_name: 'Test Recipient',
     amount: 10000,
     destination_type: 'bank',
     account: '0012345678',
@@ -642,6 +645,220 @@ test('payout SMS failures cannot reserve funds; five bad guesses lock and passwo
     () => confirmPayout(f.db, f.config, f.user, fresh.challenge_id, { code: f.lastCode() }),
     { status: 409 },
   );
+});
+
+test('own-phone withdrawals require a fresh organizer OTP for each quote without a second destination code', async (t) => {
+  const f = fixture(t, { payoutDriver: 'demo' });
+  f.sale();
+  await f.verifyPhone();
+  const details = {
+    amount: 1000,
+    destination_type: 'mobile_money',
+    account: '0748281701',
+    channel: 'MPESA',
+    account_name: 'Organizer',
+    password: 'OtpTestPassword123!',
+  };
+  const q = await requestPayoutQuote(f.db, f.config, f.user, {
+    ...details,
+    idempotency_key: randomUUID(),
+  });
+  assert.equal(q.destination_verification_required, false);
+  const input = {
+    quote_id: q.id,
+    account_name_confirmed: true,
+    password: details.password,
+    idempotency_key: randomUUID(),
+  };
+  const c = await requestPayoutCode(f.db, f.config, f.user, input, 'primary-ip');
+  assert.equal(f.messages.at(-1).phone, '+255748281701');
+  const first = confirmPayout(f.db, f.config, f.user, c.challenge_id, { code: f.lastCode() });
+  const oldOtp = f.db
+    .prepare('SELECT otp_challenge_id FROM payout_challenges WHERE id=?')
+    .get(c.challenge_id);
+  f.age(oldOtp.otp_challenge_id);
+  const next = await requestPayoutQuote(f.db, f.config, f.user, {
+    ...details,
+    idempotency_key: randomUUID(),
+  });
+  const c2 = await requestPayoutCode(
+    f.db,
+    f.config,
+    f.user,
+    { ...input, quote_id: next.id, idempotency_key: randomUUID() },
+    'primary-ip',
+  );
+  assert.notEqual(c2.challenge_id, c.challenge_id);
+  assert.throws(() => confirmPayout(f.db, f.config, f.user, c2.challenge_id, { code: '000000' }), {
+    status: 400,
+  });
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM payout_requests').get().n, 1);
+  const second = confirmPayout(f.db, f.config, f.user, c2.challenge_id, { code: f.lastCode() });
+  assert.notEqual(second.id, first.id);
+});
+
+test('a different payout number needs fresh destination proof plus primary authorization; wrong guesses persist and old proof cannot authorize another quote', async (t) => {
+  const f = fixture(t, { payoutDriver: 'demo' });
+  f.sale();
+  await f.verifyPhone();
+  const details = {
+    amount: 1000,
+    destination_type: 'mobile_money',
+    account: '0712345678',
+    channel: 'MPESA',
+    account_name: 'Friend',
+    password: 'OtpTestPassword123!',
+  };
+  const q = await requestPayoutQuote(f.db, f.config, f.user, {
+    ...details,
+    idempotency_key: randomUUID(),
+  });
+  assert.equal(q.destination_verification_required, true);
+  const input = {
+    quote_id: q.id,
+    account_name_confirmed: true,
+    password: details.password,
+    idempotency_key: randomUUID(),
+  };
+  await assert.rejects(
+    requestPayoutCode(f.db, f.config, f.user, input, 'primary-ip'),
+    /fresh SMS code/,
+  );
+  await assert.rejects(
+    requestPayoutDestinationCode(
+      f.db,
+      f.config,
+      f.user,
+      { quote_id: q.id, password: 'wrong' },
+      'destination-ip',
+    ),
+    { status: 401 },
+  );
+  const d = await requestPayoutDestinationCode(f.db, f.config, f.user, input, 'destination-ip');
+  const destinationCode = f.lastCode();
+  assert.equal(f.messages.at(-1).phone, '+255712345678');
+  assert.match(f.messages.at(-1).text, /payout number verification/);
+  assert.equal('code' in d, false);
+  const sends = f.messages.length;
+  assert.equal(
+    (await requestPayoutDestinationCode(f.db, f.config, f.user, input, 'destination-ip'))
+      .challenge_id,
+    d.challenge_id,
+  );
+  assert.equal(f.messages.length, sends);
+  assert.throws(
+    () =>
+      verifyPayoutDestination(
+        f.db,
+        f.config,
+        { ...f.user, id: randomUUID() },
+        { quote_id: q.id, challenge_id: d.challenge_id, code: destinationCode },
+      ),
+    { status: 404 },
+  );
+  assert.throws(
+    () =>
+      verifyPayoutDestination(f.db, f.config, f.user, {
+        quote_id: q.id,
+        challenge_id: d.challenge_id,
+        code: '000000',
+      }),
+    { status: 400 },
+  );
+  assert.equal(f.row(d.challenge_id).attempts, 1);
+  verifyPayoutDestination(f.db, f.config, f.user, {
+    quote_id: q.id,
+    challenge_id: d.challenge_id,
+    code: destinationCode,
+  });
+  assert.equal(f.row(d.challenge_id).code_hash, null);
+  const c = await requestPayoutCode(f.db, f.config, f.user, input, 'primary-ip');
+  assert.equal(f.messages.at(-1).phone, '+255748281701');
+  assert.ok(c.expires_at <= d.expires_at);
+  const payout = confirmPayout(f.db, f.config, f.user, c.challenge_id, { code: f.lastCode() });
+  assert.equal(payout.phone, '255712345678');
+  const next = await requestPayoutQuote(f.db, f.config, f.user, {
+    ...details,
+    idempotency_key: randomUUID(),
+  });
+  await assert.rejects(
+    requestPayoutCode(
+      f.db,
+      f.config,
+      f.user,
+      {
+        ...input,
+        quote_id: next.id,
+        idempotency_key: randomUUID(),
+        destination_challenge_id: d.challenge_id,
+      },
+      'primary-ip',
+    ),
+    /fresh SMS code/,
+  );
+});
+
+test('destination proof expires and is invalidated by password changes before primary authorization or transfer', async (t) => {
+  const f = fixture(t, { payoutDriver: 'demo' });
+  f.sale();
+  await f.verifyPhone();
+  const password = 'OtpTestPassword123!';
+  const q = await requestPayoutQuote(f.db, f.config, f.user, {
+    amount: 1000,
+    destination_type: 'mobile_money',
+    account: '0712345678',
+    channel: 'MPESA',
+    account_name: 'Friend',
+    password,
+    idempotency_key: randomUUID(),
+  });
+  const d = await requestPayoutDestinationCode(
+    f.db,
+    f.config,
+    f.user,
+    { quote_id: q.id, password },
+    'destination-ip',
+  );
+  verifyPayoutDestination(f.db, f.config, f.user, {
+    quote_id: q.id,
+    challenge_id: d.challenge_id,
+    code: f.lastCode(),
+  });
+  const originalHash = f.user.password;
+  f.db
+    .prepare('UPDATE users SET password=? WHERE id=?')
+    .run(hashPassword('ChangedPassword123!'), f.user.id);
+  await assert.rejects(
+    requestPayoutCode(
+      f.db,
+      f.config,
+      f.user,
+      {
+        quote_id: q.id,
+        account_name_confirmed: true,
+        password: 'ChangedPassword123!',
+        idempotency_key: randomUUID(),
+      },
+      'primary-ip',
+    ),
+    /fresh SMS code/,
+  );
+  f.db.prepare('UPDATE users SET password=? WHERE id=?').run(originalHash, f.user.id);
+  const c = await requestPayoutCode(
+    f.db,
+    f.config,
+    f.user,
+    { quote_id: q.id, account_name_confirmed: true, password, idempotency_key: randomUUID() },
+    'primary-ip',
+  );
+  const primaryCode = f.lastCode();
+  f.db.prepare('UPDATE otp_challenges SET expires_at=0 WHERE id=?').run(d.challenge_id);
+  assert.throws(
+    () => confirmPayout(f.db, f.config, f.user, c.challenge_id, { code: primaryCode }),
+    /fresh SMS code/,
+  );
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM payout_requests').get().n, 0);
+  assert.equal(organizerFinance(f.db, f.config, f.user).reserved, 0);
 });
 test('shared tickets use NextSMS only to the friend; rotate admission credentials and replay only with private claim key', async (t) => {
   const f = fixture(t),

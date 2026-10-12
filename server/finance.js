@@ -6,7 +6,14 @@ import { HttpError, normalizePhone } from './domain.js';
 import { safeEqual, tokenHash, verifyPassword } from './auth.js';
 import { scannerEmailAvailable } from './scanner-mail.js';
 import { smsAvailable } from './sms.js';
-import { issueOtp, consumeOtp, verifiedPhone, otpReceiptProof, maskOtpPhone } from './otp.js';
+import {
+  issueOtp,
+  consumeOtp,
+  verifiedPhone,
+  otpReceiptProof,
+  maskOtpPhone,
+  otpBinding,
+} from './otp.js';
 import { ecofyRequest, verifyEcofy } from './ecofy.js';
 import { platformFee } from './fees.js';
 import {
@@ -301,7 +308,7 @@ export async function requestPayoutCode(db, config, user, input, ip) {
   if (automatic(config)) {
     quote = ownedQuote(db, config, user, input?.quote_id);
     if (input?.account_name_confirmed !== true)
-      throw new HttpError(400, 'Confirm the verified account holder name before continuing.');
+      throw new HttpError(400, 'Confirm the recipient name and destination before continuing.');
     input = {
       ...input,
       amount: quote.amount,
@@ -327,6 +334,7 @@ export async function requestPayoutCode(db, config, user, input, ip) {
   const current = db.prepare('SELECT * FROM users WHERE id=?').get(user.id);
   if (!verifyPassword(parsed.data.password, current.password))
     throw new HttpError(401, 'Your account password is incorrect.');
+  const destinationExpiry = quote ? assertDestinationProof(db, config, current, quote) : Infinity;
   const phone = quote ? quote.account : normalizePhone(parsed.data.phone),
     now = Date.now();
   const payloadHash = tokenHash(
@@ -373,10 +381,11 @@ export async function requestPayoutCode(db, config, user, input, ip) {
       config,
       { purpose: 'payout', userId: user.id, phone: securityPhone, binding: payloadHash, ip },
       {
-        expiresAt: quote?.expires_at,
+        expiresAt: Math.min(quote?.expires_at || Infinity, destinationExpiry),
         amount: parsed.data.amount + (quote?.fee || 0),
         afterCreate: (otp) => {
           if (quote) ownedQuote(db, config, user, quote.id);
+          if (quote) assertDestinationProof(db, config, current, quote);
           if (
             verifiedPhone(db, user.id) !== securityPhone ||
             db.prepare('SELECT password FROM users WHERE id=?').get(user.id).password !==
@@ -577,6 +586,7 @@ export function confirmPayout(db, config, user, challengeId, input) {
         ),
       };
     const quote = c.quote_id ? ownedQuote(db, config, user, c.quote_id) : null;
+    if (quote) assertDestinationProof(db, config, account, quote);
     if (automatic(config) !== !!quote)
       throw new HttpError(409, 'Payout configuration changed. Start again.');
     if (
@@ -746,13 +756,15 @@ function ownedQuote(db, config, user, id) {
     throw new HttpError(409, 'This quote has already been used. Check your payout history.');
   return q;
 }
-function publicQuote(q) {
+function publicQuote(q, destinationVerification = false) {
   return {
     id: q.id,
     amount: q.amount,
     fee: q.fee,
     total: q.total,
     account_name: q.account_name,
+    account_name_source: q.account_name_source,
+    destination_verification_required: destinationVerification,
     account_last4: q.account.slice(-4),
     destination_type: q.destination_type,
     channel: q.channel,
@@ -760,9 +772,127 @@ function publicQuote(q) {
     demo: q.driver === 'demo',
   };
 }
+function destinationVerificationRequired(db, config, user, quote) {
+  return (
+    quote.destination_type === 'mobile_money' &&
+    payoutVerificationMode(config) === 'nextsms' &&
+    normalizePhone(quote.account) !== verifiedPhone(db, user.id)
+  );
+}
+function destinationContext(db, user, quote) {
+  return {
+    purpose: 'payout',
+    userId: user.id,
+    phone: normalizePhone(quote.account),
+    binding: otpBinding([
+      'payout_destination',
+      user.id,
+      quote.id,
+      quote.account,
+      quote.channel,
+      quote.amount,
+      quote.fee,
+      quote.account_name,
+      tokenHash(user.password),
+      verifiedPhone(db, user.id),
+    ]),
+  };
+}
+function assertDestinationProof(db, config, user, quote) {
+  if (!destinationVerificationRequired(db, config, user, quote)) return Infinity;
+  const otp = db
+    .prepare('SELECT * FROM otp_challenges WHERE id=?')
+    .get(quote.destination_otp_challenge_id);
+  if (
+    !otp ||
+    otp.expires_at <= Date.now() ||
+    !otpReceiptProof(db, config, otp.id, destinationContext(db, user, quote))
+  )
+    throw new HttpError(409, 'Verify this payout number with a fresh SMS code before continuing.');
+  return otp.expires_at;
+}
+export async function requestPayoutDestinationCode(db, config, user, input, ip) {
+  organizer(user);
+  const quote = ownedQuote(db, config, user, input?.quote_id);
+  const current = db.prepare('SELECT * FROM users WHERE id=?').get(user.id);
+  if (
+    typeof input?.password !== 'string' ||
+    input.password.length > 128 ||
+    !verifyPassword(input.password, current.password)
+  )
+    throw new HttpError(401, 'Your account password is incorrect.');
+  if (!verifiedPhone(db, user.id) || !destinationVerificationRequired(db, config, current, quote))
+    throw new HttpError(
+      409,
+      'Separate destination verification is not required for this withdrawal.',
+    );
+  const context = destinationContext(db, current, quote);
+  const previous = db
+    .prepare('SELECT * FROM otp_challenges WHERE id=?')
+    .get(quote.destination_otp_challenge_id);
+  if (
+    previous?.status === 'sent' &&
+    previous.expires_at > Date.now() &&
+    previous.binding_hash === context.binding
+  )
+    return {
+      challenge_id: previous.id,
+      phone: maskOtpPhone(previous.phone),
+      expires_at: previous.expires_at,
+    };
+  const challenge = await issueOtp(
+    db,
+    config,
+    { ...context, ip },
+    {
+      expiresAt: quote.expires_at,
+      destinationVerification: true,
+      afterCreate: (otp) => {
+        ownedQuote(db, config, current, quote.id);
+        const latest = db.prepare('SELECT * FROM users WHERE id=?').get(user.id);
+        if (destinationContext(db, latest, quote).binding !== context.binding)
+          throw new HttpError(409, 'Account verification changed. Start again.');
+        db.prepare('UPDATE payout_quotes SET destination_otp_challenge_id=? WHERE id=?').run(
+          otp.id,
+          quote.id,
+        );
+      },
+    },
+  );
+  return challenge;
+}
+export function verifyPayoutDestination(db, config, user, input) {
+  organizer(user);
+  const result = transaction(db, () => {
+    const quote = ownedQuote(db, config, user, input?.quote_id);
+    const current = db.prepare('SELECT * FROM users WHERE id=?').get(user.id);
+    if (!destinationVerificationRequired(db, config, current, quote))
+      throw new HttpError(409, 'Separate destination verification is not required.');
+    if (
+      !quote.destination_otp_challenge_id ||
+      input?.challenge_id !== quote.destination_otp_challenge_id
+    )
+      throw new HttpError(404, 'Destination verification not found.');
+    const context = destinationContext(db, current, quote);
+    const otp = db
+      .prepare('SELECT * FROM otp_challenges WHERE id=?')
+      .get(quote.destination_otp_challenge_id);
+    if (!otp) throw new HttpError(404, 'Destination verification not found.');
+    if (otp.expires_at > Date.now() && otpReceiptProof(db, config, otp.id, context))
+      return { verified: true };
+    const verified = consumeOtp(db, config, otp.id, context, input?.code);
+    return verified.ok
+      ? { verified: true }
+      : { error: new HttpError(verified.status, verified.error) };
+  });
+  if (result.error) throw result.error;
+  return result;
+}
 export async function requestPayoutQuote(db, config, user, input) {
   organizer(user);
   if (!automatic(config)) throw new HttpError(409, 'Provider payout quotes are not enabled.');
+  if (config.production && payoutVerificationMode(config) !== 'nextsms')
+    throw new HttpError(503, 'Fresh SMS verification is required for production withdrawals.');
   if (payoutVerificationMode(config) === 'disabled')
     throw new HttpError(
       503,
@@ -779,6 +909,7 @@ export async function requestPayoutQuote(db, config, user, input) {
       destination_type: z.enum(['mobile_money', 'bank']),
       channel: z.enum(['MPESA', 'AIRTELMONEY', 'CRDB', 'NMB']),
       account: z.string().trim().min(6).max(30),
+      account_name: z.string().trim().min(2).max(100),
       password: z.string().min(1).max(128),
       idempotency_key: z.uuid(),
     })
@@ -794,7 +925,15 @@ export async function requestPayoutQuote(db, config, user, input) {
     d.destination_type === 'mobile_money' ? normalizePhone(d.account).slice(1) : d.account;
   if (!/^\d{6,30}$/.test(account)) throw new HttpError(400, 'Enter a valid account number.');
   const payloadHash = tokenHash(
-    JSON.stringify([user.id, d.amount, d.destination_type, d.channel, account]),
+    JSON.stringify([
+      user.id,
+      d.amount,
+      d.destination_type,
+      d.channel,
+      account,
+      d.account_name,
+      true,
+    ]),
   );
   const q = transaction(db, () => {
     let row = db
@@ -821,8 +960,8 @@ export async function requestPayoutQuote(db, config, user, input) {
         throw new HttpError(409, 'The amount exceeds your available earnings.');
       const id = randomUUID();
       db.prepare(
-        `INSERT INTO payout_quotes (id,user_id,driver,idempotency_key,payload_hash,amount,destination_type,channel,account,status,created_at)
-        VALUES (?,?,?,?,?,?,?,?,?,'quoting',?)`,
+        `INSERT INTO payout_quotes (id,user_id,driver,idempotency_key,payload_hash,amount,destination_type,channel,account,account_name,skip_account_check,status,created_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,1,'quoting',?)`,
       ).run(
         id,
         user.id,
@@ -833,6 +972,7 @@ export async function requestPayoutQuote(db, config, user, input) {
         d.destination_type,
         d.channel,
         account,
+        d.account_name,
         Date.now(),
       );
       row = db.prepare('SELECT * FROM payout_quotes WHERE id=?').get(id);
@@ -845,7 +985,8 @@ export async function requestPayoutQuote(db, config, user, input) {
     );
     return row;
   });
-  if (q.status === 'ready') return publicQuote(q);
+  if (q.status === 'ready')
+    return publicQuote(q, destinationVerificationRequired(db, config, user, q));
   try {
     const remote =
       q.driver === 'demo'
@@ -854,7 +995,8 @@ export async function requestPayoutQuote(db, config, user, input) {
             amount: q.amount,
             fee: 100,
             total: q.amount + 100,
-            account_name: 'DEMO VERIFIED RECIPIENT',
+            account_name: q.account_name,
+            account_name_source: 'merchant',
             expires_at: Date.now() + 600000,
           }
         : await ecofyQuote(config, q);
@@ -880,14 +1022,30 @@ export async function requestPayoutQuote(db, config, user, input) {
         );
     }
     db.prepare(
-      `UPDATE payout_quotes SET external_id=?,account_name=?,fee=?,total=?,expires_at=?,status='ready' WHERE id=? AND status='quoting'`,
-    ).run(remote.id, remote.account_name, remote.fee, remote.total, remote.expires_at, q.id);
-    return publicQuote(db.prepare('SELECT * FROM payout_quotes WHERE id=?').get(q.id));
+      `UPDATE payout_quotes SET external_id=?,account_name=?,account_name_source=?,fee=?,total=?,expires_at=?,status='ready' WHERE id=? AND status='quoting'`,
+    ).run(
+      remote.id,
+      remote.account_name,
+      remote.account_name_source,
+      remote.fee,
+      remote.total,
+      remote.expires_at,
+      q.id,
+    );
+    const ready = db.prepare('SELECT * FROM payout_quotes WHERE id=?').get(q.id);
+    return publicQuote(ready, destinationVerificationRequired(db, config, user, ready));
   } catch (error) {
     db.prepare(
       "UPDATE payout_quotes SET status=?,next_attempt=0 WHERE id=? AND status='quoting'",
     ).run(
-      error instanceof HttpError || error.definitive || error.code === 'withdrawals_unavailable'
+      error instanceof HttpError ||
+        error.definitive ||
+        [
+          'withdrawals_unavailable',
+          'account_not_found',
+          'lookup_unavailable',
+          'account_name_required',
+        ].includes(error.code)
         ? 'failed'
         : 'quoting',
       q.id,
@@ -898,8 +1056,12 @@ export async function requestPayoutQuote(db, config, user, input) {
         503,
         'Ecofy is currently refusing automatic withdrawals. Contact support or try again later. No money was sent.',
       );
-    if (error.code === 'not_found')
+    if (error.code === 'account_not_found')
       throw new HttpError(400, 'Ecofy could not find this account. Check the number and channel.');
+    if (error.code === 'lookup_unavailable')
+      throw new HttpError(503, 'Ecofy could not process the recipient details. No money was sent.');
+    if (error.code === 'account_name_required')
+      throw new HttpError(422, 'Enter the recipient account name. No money was sent.');
     throw new HttpError(
       502,
       'The account check could not be confirmed. No money was sent. Retry the same quote request.',

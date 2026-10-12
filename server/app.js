@@ -43,6 +43,8 @@ import {
   cancelPayout,
   reviewPayout,
   requestPayoutQuote,
+  requestPayoutDestinationCode,
+  verifyPayoutDestination,
   submitPayout,
   payoutVerificationMode,
 } from './finance.js';
@@ -702,6 +704,14 @@ export function createApp(db, config, health = createHealthMonitor(db, config)) 
   app.get('/api/organizer/finance', (req, res) => res.json(organizerFinance(db, config, req.user)));
   app.post('/api/organizer/payouts/quote', authLimit, async (req, res) =>
     res.json({ quote: await requestPayoutQuote(db, config, req.user, req.body) }),
+  );
+  app.post('/api/organizer/payouts/destination/code', authLimit, otpSendLimit, async (req, res) =>
+    res
+      .status(202)
+      .json(await requestPayoutDestinationCode(db, config, req.user, req.body, req.ip)),
+  );
+  app.post('/api/organizer/payouts/destination/verify', authLimit, otpVerifyLimit, (req, res) =>
+    res.json(verifyPayoutDestination(db, config, req.user, req.body)),
   );
   app.post(
     '/api/organizer/payouts/code',

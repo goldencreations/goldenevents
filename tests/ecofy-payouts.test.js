@@ -145,7 +145,15 @@ function fixture(t) {
         has_more: false,
       });
     if (u.pathname === '/v1/payouts/quote') {
-      assert.deepEqual(Object.keys(body).sort(), ['account', 'amount', 'channel', 'type']);
+      assert.deepEqual(Object.keys(body).sort(), [
+        'account',
+        'account_name',
+        'amount',
+        'channel',
+        'skip_account_check',
+        'type',
+      ]);
+      assert.equal(body.skip_account_check, true);
       const q = {
         id: `pq_${options.headers['Idempotency-Key'].replaceAll('-', '')}`,
         amount: body.amount,
@@ -153,6 +161,7 @@ function fixture(t) {
         total: body.amount + 100,
         account_last4: body.account.slice(-4),
         account_name: 'VERIFIED RECIPIENT',
+        account_name_source: 'merchant',
         expires_at: new Date(Date.now() + 600000).toISOString(),
         ...state.quotePatch,
       };
@@ -203,6 +212,7 @@ function fixture(t) {
     rmSync(dir, { recursive: true, force: true });
   });
   const quoteInput = (patch = {}) => ({
+    account_name: 'VERIFIED RECIPIENT',
     amount: 10000,
     destination_type: 'mobile_money',
     channel: 'MPESA',
@@ -265,9 +275,10 @@ test('a quote verifies destination and fee, requires recognized-name consent, an
   await syncEcofyFinance(f.db, f.config);
   const q = await f.quote();
   assert.equal(q.account_name, 'VERIFIED RECIPIENT');
+  assert.equal(q.account_name_source, 'merchant');
   assert.equal(q.fee, 100);
   assert.equal(q.total, 10100);
-  await assert.rejects(f.code(q, { account_name_confirmed: false }), /Confirm the verified/);
+  await assert.rejects(f.code(q, { account_name_confirmed: false }), /Confirm the recipient/);
   await assert.rejects(requestPayoutCode(f.db, f.config, f.other, { quote_id: q.id }), /not found/);
   const c = await f.code(q, {
     amount: 1,
@@ -383,6 +394,35 @@ test('bank quoting preserves leading zeros, uses documented channels, and reject
     f.quote({ destination_type: 'bank', channel: 'MPESA', account: '0012345678' }),
     /matching bank/,
   );
+});
+
+test('lookup bypass preserves the entered name, tracks source, rejects changed names and implements revised quote errors', async (t) => {
+  const f = fixture(t);
+  await syncEcofyFinance(f.db, f.config);
+  const q = await f.quote();
+  assert.equal(q.account_name_source, 'merchant');
+  const call = f.state.calls.find((r) => r.path === '/v1/payouts/quote');
+  assert.equal(call.body.skip_account_check, true);
+  assert.equal(call.body.account_name, 'VERIFIED RECIPIENT');
+  f.state.quotePatch = { account_name: 'DIFFERENT NAME', account_name_source: 'merchant' };
+  await assert.rejects(f.quote(), /account check could not be confirmed/);
+  f.state.quotePatch = { account_name_source: 'unknown' };
+  await assert.rejects(f.quote(), /account check could not be confirmed/);
+  const providerFetch = globalThis.fetch;
+  let code;
+  globalThis.fetch = async (url, options) =>
+    new URL(url).pathname === '/v1/payouts/quote'
+      ? new Response(JSON.stringify({ error: { code } }), { status: 422 })
+      : providerFetch(url, options);
+  for (const [errorCode, status] of [
+    ['account_not_found', 400],
+    ['lookup_unavailable', 503],
+    ['account_name_required', 422],
+  ]) {
+    code = errorCode;
+    await assert.rejects(f.quote(), (error) => error.status === status);
+  }
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM payout_requests').get().n, 0);
 });
 
 test('withdrawals-unavailable quote exposes a clear provider block without an OTP, reservation or transfer', async (t) => {
@@ -627,11 +667,45 @@ test('payout API protects tenant boundaries, CSRF and OTP secrecy and rejects do
   ).cookie;
   assert.equal((await request('/organizer/payouts/quote', f.quoteInput())).status, 401);
   assert.equal(
+    (await request('/organizer/payouts/destination/code', { quote_id: 'unknown' })).status,
+    401,
+  );
+  assert.equal(
+    (
+      await request('/organizer/payouts/destination/verify', {
+        quote_id: 'unknown',
+        code: '000000',
+      })
+    ).status,
+    401,
+  );
+  assert.equal(
     (await request('/organizer/payouts/quote', f.quoteInput(), owner, 'https://evil.example'))
       .status,
     403,
   );
   const q = await request('/organizer/payouts/quote', f.quoteInput(), owner);
+  assert.equal(
+    (
+      await request(
+        '/organizer/payouts/destination/code',
+        { quote_id: q.data.quote.id, password: 'TestPassword123!' },
+        other,
+      )
+    ).status,
+    404,
+  );
+  assert.equal(
+    (
+      await request(
+        '/organizer/payouts/destination/verify',
+        { quote_id: q.data.quote.id, code: '000000' },
+        owner,
+        'https://evil.example',
+      )
+    ).status,
+    403,
+  );
   assert.equal(q.status, 200);
   assert.equal(q.data.quote.external_id, undefined);
   const details = {

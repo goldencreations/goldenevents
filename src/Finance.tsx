@@ -11,6 +11,7 @@ import {
   LockKeyhole,
   RefreshCw,
   ShieldCheck,
+  UserRound,
   X,
 } from 'lucide-react';
 import { api, send, money, dateLabel, timeLabel, downloadCSV, ApiError } from './api';
@@ -485,6 +486,8 @@ type ProviderQuote = {
   fee: number;
   total: number;
   account_name: string;
+  account_name_source: 'rail' | 'cache' | 'merchant' | null;
+  destination_verification_required: boolean;
   account_last4: string;
   destination_type: string;
   channel: string;
@@ -503,12 +506,19 @@ function ProviderPayoutForm({
   const { user } = useApp();
   const [amount, setAmount] = useState(''),
     [account, setAccount] = useState(user?.phone || ''),
+    [recipientName, setRecipientName] = useState(user?.name || ''),
     [destination, setDestination] = useState('mobile_money'),
     [channel, setChannel] = useState('MPESA'),
     [password, setPassword] = useState(''),
     [quote, setQuote] = useState<ProviderQuote | null>(null),
     [acceptedName, setAcceptedName] = useState(false),
     [challenge, setChallenge] = useState<Challenge | null>(null),
+    [destinationChallenge, setDestinationChallenge] = useState<{
+      challenge_id: string;
+      phone: string;
+      expires_at: number;
+    } | null>(null),
+    [destinationVerified, setDestinationVerified] = useState(false),
     [code, setCode] = useState(''),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(''),
@@ -522,6 +532,8 @@ function ProviderPayoutForm({
   const reset = () => {
     setQuote(null);
     setChallenge(null);
+    setDestinationChallenge(null);
+    setDestinationVerified(false);
     setAcceptedName(false);
     setCode('');
     setPassword('');
@@ -529,8 +541,31 @@ function ProviderPayoutForm({
     quoteKey.current = crypto.randomUUID();
     otpKey.current = crypto.randomUUID();
   };
-  const expires = challenge?.expires_at || quote?.expires_at;
+  const expires = challenge?.expires_at || destinationChallenge?.expires_at || quote?.expires_at;
   const remaining = expires ? Math.max(0, Math.ceil((expires - now) / 1000)) : 0;
+  const sendVerification = async (q: ProviderQuote, destinationReady = destinationVerified) => {
+    if (q.destination_verification_required && !destinationReady) {
+      const c = await send<{ challenge_id: string; phone: string; expires_at: number }>(
+        '/organizer/payouts/destination/code',
+        {
+          quote_id: q.id,
+          password,
+        },
+      );
+      setDestinationChallenge(c);
+    } else {
+      const c = await send<Challenge>('/organizer/payouts/code', {
+        quote_id: q.id,
+        account_name_confirmed: true,
+        password,
+        idempotency_key: otpKey.current,
+      });
+      setChallenge(c);
+      setPassword('');
+    }
+    setCode('');
+    setNow(Date.now());
+  };
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setBusy(true);
@@ -542,20 +577,22 @@ function ProviderPayoutForm({
           { code },
         );
         onSubmitted(result.payout);
-      } else if (quote) {
-        const c = await send<Challenge>('/organizer/payouts/code', {
+      } else if (quote && destinationChallenge) {
+        await send('/organizer/payouts/destination/verify', {
           quote_id: quote.id,
-          account_name_confirmed: acceptedName,
-          password,
-          idempotency_key: otpKey.current,
+          challenge_id: destinationChallenge.challenge_id,
+          code,
         });
-        setChallenge(c);
-        setNow(Date.now());
-        setPassword('');
+        setDestinationVerified(true);
+        setDestinationChallenge(null);
+        await sendVerification(quote, true);
+      } else if (quote) {
+        await sendVerification(quote);
       } else {
         const response = await send<{ quote: ProviderQuote }>('/organizer/payouts/quote', {
           amount: Number(amount),
           account,
+          account_name: recipientName,
           destination_type: destination,
           channel,
           password,
@@ -563,9 +600,10 @@ function ProviderPayoutForm({
         });
         setQuote(response.quote);
         setNow(Date.now());
+        await sendVerification(response.quote);
       }
     } catch (e) {
-      if (!challenge && e instanceof ApiError && [400, 401, 409, 503].includes(e.status)) {
+      if (!challenge && e instanceof ApiError && [400, 401, 409, 422, 503].includes(e.status)) {
         if (!quote) quoteKey.current = crypto.randomUUID();
         else otpKey.current = crypto.randomUUID();
       }
@@ -579,11 +617,13 @@ function ProviderPayoutForm({
   return (
     <Modal
       title={
-        challenge
-          ? 'Confirm your payout'
-          : quote
-            ? 'Check your recipient'
-            : 'Withdraw your earnings'
+        destinationChallenge
+          ? 'Verify payout number'
+          : challenge
+            ? 'Confirm your payout'
+            : quote
+              ? 'Continue withdrawal'
+              : 'Withdraw your earnings'
       }
       onClose={() => !busy && onClose()}
     >
@@ -592,9 +632,23 @@ function ProviderPayoutForm({
         {quote ? (
           <>
             <div className="payout-verified-name">
-              <ShieldCheck size={20} />
+              {quote.account_name_source === 'rail' ? (
+                <ShieldCheck size={20} />
+              ) : (
+                <UserRound size={20} />
+              )}
               <div>
-                <span>{quote.demo ? 'Simulated account verification' : 'Verified by Ecofy'}</span>
+                <span>
+                  {quote.demo
+                    ? 'Demo recipient'
+                    : quote.account_name_source === 'merchant'
+                      ? 'Recipient name you entered'
+                      : quote.account_name_source === 'cache'
+                        ? 'Name from Ecofy cache'
+                        : quote.account_name_source === 'rail'
+                          ? 'Name from payment network'
+                          : 'Recipient'}
+                </span>
                 <strong>{quote.account_name}</strong>
                 <small>
                   {networks[quote.channel]} · account ending {quote.account_last4}
@@ -635,13 +689,14 @@ function ProviderPayoutForm({
                 </div>
               )}
             </dl>
-            {challenge ? (
+            {challenge || destinationChallenge ? (
               <>
                 <p className="finance-note">
-                  Code sent to {challenge.verification_phone || challenge.email}. Confirming
-                  authorizes this exact recipient, amount and fee.
+                  {destinationChallenge
+                    ? `Code sent to payout number ${destinationChallenge.phone}.`
+                    : `Authorization code sent to ${challenge!.verification_phone || challenge!.email}. Confirming authorizes this recipient, amount and fee.`}
                 </p>
-                {challenge.demo_code && (
+                {challenge?.demo_code && (
                   <div className="notice">
                     <LockKeyhole size={17} />
                     <span>
@@ -650,7 +705,7 @@ function ProviderPayoutForm({
                   </div>
                 )}
                 <label>
-                  Verification code
+                  {destinationChallenge ? 'Payout number verification code' : 'Verification code'}
                   <input
                     autoFocus
                     required
@@ -664,7 +719,8 @@ function ProviderPayoutForm({
                   />
                 </label>
               </>
-            ) : (
+            ) : null}
+            {challenge && (
               <label className="finance-check">
                 <input
                   required
@@ -673,9 +729,7 @@ function ProviderPayoutForm({
                   checked={acceptedName}
                   onChange={(e) => setAcceptedName(e.target.checked)}
                 />
-                <span>
-                  I recognize this account holder and confirm the destination and withdrawal fee.
-                </span>
+                <span>I confirm the recipient, destination and withdrawal fee.</span>
               </label>
             )}
             <span className="finance-note">
@@ -690,16 +744,18 @@ function ProviderPayoutForm({
               </button>
               <button
                 className="button primary"
-                disabled={busy || !remaining || (!challenge && !acceptedName)}
+                disabled={busy || !remaining || (!!challenge && !acceptedName)}
               >
                 <ShieldCheck size={16} />
                 {busy
-                  ? 'Checking...'
+                  ? 'Processing...'
                   : challenge
                     ? quote.demo
                       ? 'Simulate payout'
                       : `Send TZS ${money(quote.amount)}`
-                    : 'Send code'}
+                    : destinationChallenge
+                      ? 'Verify number'
+                      : 'Send verification code'}
               </button>
             </div>
           </>
@@ -779,6 +835,18 @@ function ProviderPayoutForm({
               />
             </label>
             <label>
+              Recipient account name
+              <input
+                required
+                minLength={2}
+                maxLength={100}
+                value={recipientName}
+                disabled={busy}
+                onChange={(e) => setRecipientName(e.target.value)}
+                autoComplete="name"
+              />
+            </label>
+            <label>
               Your account password
               <input
                 type="password"
@@ -796,7 +864,7 @@ function ProviderPayoutForm({
               </button>
               <button className="button primary" disabled={busy}>
                 <ArrowUpRight size={16} />
-                {busy ? 'Checking account...' : 'Check recipient & fee'}
+                {busy ? 'Preparing withdrawal...' : 'Continue'}
               </button>
             </div>
           </>
