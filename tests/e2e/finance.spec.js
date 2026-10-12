@@ -31,7 +31,7 @@ test('HTML gateway errors show a safe payout message and quote retries preserve 
   expect(keys[0]).toBe(keys[1]);
 });
 
-test('fee allowance and quote coverage remain clear on desktop and mobile without double subtraction', async ({
+test('dashboard shows net take-home and combined withdrawal fees, and prefills the actual recipient amount', async ({
   page,
 }) => {
   await page.goto('/register');
@@ -60,6 +60,19 @@ test('fee allowance and quote coverage remain clear on desktop and mobile withou
         withdrawal_capacity: 1860,
         provider_fee_allowance_bps: 250,
         provider_fee_reserve: 10,
+        withdrawal_preview: {
+          status: 'quoted',
+          amount: 1815,
+          fee: 45,
+          total: 1860,
+          remaining: 0,
+          combined_fees: 85,
+          expires_at: Date.now() + 60000,
+          account: '255712345678',
+          account_name: 'TEST RECIPIENT',
+          destination_type: 'mobile_money',
+          channel: 'MPESA',
+        },
       },
     });
   });
@@ -68,8 +81,8 @@ test('fee allowance and quote coverage remain clear on desktop and mobile withou
       json: {
         quote: {
           id: 'allowance-quote',
-          amount: 1850,
-          fee: 10,
+          amount: 1815,
+          fee: 45,
           total: 1860,
           account_name: 'TEST RECIPIENT',
           account_name_source: 'merchant',
@@ -93,10 +106,10 @@ test('fee allowance and quote coverage remain clear on desktop and mobile withou
     }),
   );
   await page.goto('/dashboard/revenue');
-  await expect(page.locator('.finance-available')).toContainText('1,850');
-  await expect(page.locator('.finance-balances')).toContainText(
-    'Remaining provider-fee allowance (2.5%)',
-  );
+  await expect(page.locator('.finance-available')).toContainText('1,815');
+  await expect(page.locator('.finance-available')).not.toContainText('1,850');
+  await expect(page.locator('.finance-totals')).toContainText('Withdrawal fees');
+  await expect(page.locator('.finance-totals')).toContainText('− TZS 85');
   await page.screenshot({ path: 'test-results/fee-allowance-desktop.png', fullPage: true });
   await page.setViewportSize({ width: 375, height: 812 });
   await expect
@@ -105,7 +118,7 @@ test('fee allowance and quote coverage remain clear on desktop and mobile withou
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: 'test-results/fee-allowance-mobile.png', fullPage: true });
   await page.getByRole('button', { name: 'Request payout', exact: true }).click();
-  await page.getByLabel('Amount to recipient (TZS)').fill('1850');
+  await expect(page.getByLabel('Amount to recipient (TZS)')).toHaveValue('1815');
   await page.getByLabel('Mobile-money number').fill('0712345678');
   await page.getByLabel('Your account password').fill(password);
   await page.getByRole('button', { name: 'Continue', exact: true }).click();

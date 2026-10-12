@@ -152,6 +152,23 @@ export type Finance = {
   automatic_disbursement: boolean;
   payout_mode: 'manual_review' | 'ecofy' | 'demo';
   payout_fees: number;
+  payout_fees_reserved: number;
+  withdrawal_preview:
+    | { status: 'destination_required' | 'below_minimum' | 'unavailable' }
+    | {
+        status: 'quoted';
+        amount: number;
+        fee: number;
+        total: number;
+        remaining: number;
+        combined_fees: number;
+        expires_at: number;
+        account: string;
+        account_name: string;
+        destination_type: string;
+        channel: string;
+      }
+    | null;
   gross: number;
   platform_fee: number;
   provider_fees: number;

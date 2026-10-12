@@ -37,6 +37,7 @@ import { transaction } from './db.js';
 import { scannerEmailAvailable, sendScannerInvitation } from './scanner-mail.js';
 import {
   organizerFinance,
+  organizerFinancePreview,
   adminFinance,
   reconcileOrder,
   requestPayoutCode,
@@ -701,7 +702,9 @@ export function createApp(db, config, health = createHealthMonitor(db, config)) 
       .all(req.user.id);
     res.json({ orders: rows.map(({ idempotency_key, provider_id, ...safe }) => safe) });
   });
-  app.get('/api/organizer/finance', (req, res) => res.json(organizerFinance(db, config, req.user)));
+  app.get('/api/organizer/finance', async (req, res) =>
+    res.json(await organizerFinancePreview(db, config, req.user)),
+  );
   app.post('/api/organizer/payouts/quote', authLimit, async (req, res) =>
     res.json({ quote: await requestPayoutQuote(db, config, req.user, req.body) }),
   );
@@ -914,14 +917,12 @@ export function createApp(db, config, health = createHealthMonitor(db, config)) 
   app.use((error, _req, res, _next) => {
     const status = error instanceof multer.MulterError ? 400 : error.status || 500;
     if (status === 500) console.error(error);
-    res
-      .status(status)
-      .json({
-        error: status === 500 ? 'Something went wrong. Please try again.' : error.message,
-        ...(error instanceof HttpError && error.payoutAdjustment
-          ? { payout_adjustment: error.payoutAdjustment }
-          : {}),
-      });
+    res.status(status).json({
+      error: status === 500 ? 'Something went wrong. Please try again.' : error.message,
+      ...(error instanceof HttpError && error.payoutAdjustment
+        ? { payout_adjustment: error.payoutAdjustment }
+        : {}),
+    });
   });
   return app;
 }

@@ -18,6 +18,7 @@ import {
   processPayoutJobs,
   syncEcofyFinance,
   organizerFinance,
+  organizerFinancePreview,
   reviewPayout,
 } from '../server/finance.js';
 
@@ -431,6 +432,98 @@ test('lookup bypass preserves the entered name, tracks source, rejects changed n
     code = errorCode;
     await assert.rejects(f.quote(), (error) => error.status === status);
   }
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM payout_requests').get().n, 0);
+});
+
+test('net withdrawal previews converge on actual fees, add up to sales, coalesce and never create financial authorization', async (t) => {
+  const f = fixture(t);
+  f.config.providerFeeAllowanceBps = 250;
+  await syncEcofyFinance(f.db, f.config);
+  await f.quote();
+  const providerFetch = globalThis.fetch;
+  globalThis.fetch = async (url, options) => {
+    const response = await providerFetch(url, options);
+    if (new URL(url).pathname !== '/v1/payouts/quote') return response;
+    const data = await response.json();
+    data.fee = Math.round(data.amount * 0.025);
+    data.total = data.amount + data.fee;
+    return new Response(JSON.stringify(data), { status: 201 });
+  };
+  const start = f.state.calls.length;
+  const [a, b] = await Promise.all([
+    organizerFinancePreview(f.db, f.config, f.user),
+    organizerFinancePreview(f.db, f.config, f.user),
+  ]);
+  assert.deepEqual(a.withdrawal_preview, b.withdrawal_preview);
+  const p = a.withdrawal_preview;
+  assert.equal(p.status, 'quoted');
+  assert.equal(p.amount, 18146);
+  assert.equal(p.fee, 454);
+  assert.equal(p.remaining, 0);
+  assert.equal(a.platform_fee + p.combined_fees + p.amount + p.remaining, a.gross);
+  assert.equal(p.id, undefined);
+  assert.equal(p.external_id, undefined);
+  assert.ok(
+    f.state.calls.slice(start).filter((call) => call.path === '/v1/payouts/quote').length <= 4,
+  );
+  const calls = f.state.calls.length;
+  await organizerFinancePreview(f.db, f.config, f.user);
+  assert.equal(f.state.calls.length, calls);
+  const other = await organizerFinancePreview(f.db, f.config, f.other);
+  assert.notEqual(other.withdrawal_preview?.status, 'quoted');
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM payout_quotes').get().n, 1);
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM payout_challenges').get().n, 0);
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM payout_requests').get().n, 0);
+  f.db.prepare("UPDATE orders SET status='refunded' WHERE id=?").run(f.sale.id);
+  const changed = await organizerFinancePreview(f.db, f.config, f.user);
+  assert.equal(changed.withdrawal_preview.status, 'below_minimum');
+  assert.equal(f.state.calls.length, calls);
+});
+
+test('a provider outage cannot turn an unconfirmed fee estimate into a quoted net balance', async (t) => {
+  const f = fixture(t);
+  await syncEcofyFinance(f.db, f.config);
+  await f.quote();
+  globalThis.fetch = async () =>
+    new Response(JSON.stringify({ error: { code: 'withdrawals_unavailable' } }), { status: 503 });
+  const result = await organizerFinancePreview(f.db, f.config, f.user);
+  assert.equal(result.withdrawal_preview.status, 'unavailable');
+  assert.equal(result.available, 18600);
+  assert.equal(result.reserved, 0);
+  assert.equal(result.withdrawal_preview.amount, undefined);
+});
+
+test('a net withdrawal preview is unavailable when provider funds cannot cover it', async (t) => {
+  const f = fixture(t);
+  await syncEcofyFinance(f.db, f.config);
+  await f.quote();
+  f.state.wallet = 1000;
+  const start = f.state.calls.length;
+  const result = await organizerFinancePreview(f.db, f.config, f.user);
+  assert.equal(result.withdrawal_preview.status, 'unavailable');
+  assert.equal(result.withdrawal_preview.amount, undefined);
+  assert.deepEqual(
+    f.state.calls.slice(start).map((call) => call.path),
+    ['/v1/balance'],
+  );
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM payout_requests').get().n, 0);
+});
+
+test('a balance change during a preview cannot publish a stale recipient amount', async (t) => {
+  const f = fixture(t);
+  await syncEcofyFinance(f.db, f.config);
+  await f.quote();
+  const providerFetch = globalThis.fetch;
+  globalThis.fetch = async (url, options) => {
+    const response = await providerFetch(url, options);
+    if (new URL(url).pathname === '/v1/payouts/quote')
+      f.db.prepare("UPDATE orders SET status='refunded' WHERE id=?").run(f.sale.id);
+    return response;
+  };
+  const result = await organizerFinancePreview(f.db, f.config, f.user);
+  assert.equal(result.gross, 0);
+  assert.equal(result.withdrawal_preview.status, 'unavailable');
+  assert.equal(result.withdrawal_preview.amount, undefined);
   assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM payout_requests').get().n, 0);
 });
 

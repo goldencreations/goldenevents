@@ -169,10 +169,15 @@ export function OrganizerEarnings() {
     void load();
   }, []);
   useEffect(() => {
-    if (!data?.payouts.some((p) => p.driver !== 'manual' && p.status === 'processing')) return;
-    const timer = setInterval(() => {
-      void load();
-    }, 5000);
+    if (!data) return;
+    const processing = data.payouts.some((p) => p.driver !== 'manual' && p.status === 'processing');
+    if (!processing && data.payout_mode !== 'ecofy') return;
+    const timer = setInterval(
+      () => {
+        void load();
+      },
+      processing ? 5000 : 60000,
+    );
     return () => clearInterval(timer);
   }, [data]);
   const cancel = async () => {
@@ -202,6 +207,10 @@ export function OrganizerEarnings() {
         )}
       </>
     );
+  const preview = data.withdrawal_preview?.status === 'quoted' ? data.withdrawal_preview : null;
+  const withdrawalFees =
+    data.provider_fees + data.payout_fees + (data.payout_fees_reserved || 0) + (preview?.fee || 0);
+  const netEarnings = data.gross - data.platform_fee - withdrawalFees;
   return (
     <section className="finance-section">
       <div className="section-heading">
@@ -237,19 +246,21 @@ export function OrganizerEarnings() {
           <small>{data.fee_bps / 100}% on new purchases</small>
         </div>
         <div>
-          <span>Confirmed provider fees</span>
-          <strong>− TZS {money(data.provider_fees)}</strong>
+          <span>Withdrawal fees</span>
+          <strong>− TZS {money(withdrawalFees)}</strong>
           <small>
             {data.provider_fees_pending
               ? `${data.provider_fees_pending} orders awaiting reconciliation`
-              : 'All paid orders reconciled'}
+              : preview
+                ? 'Collection + quoted payout charges'
+                : 'Collection + confirmed payout charges'}
           </small>
         </div>
         <div>
           <span>
             {data.provider_fees_pending ? 'Estimated organizer earnings' : 'Organizer earnings'}
           </span>
-          <strong>TZS {money(data.net_estimate)}</strong>
+          <strong>TZS {money(netEarnings)}</strong>
           <small>
             {data.provider_fees_pending
               ? 'Unconfirmed provider fees not deducted yet'
@@ -259,9 +270,25 @@ export function OrganizerEarnings() {
       </div>
       <div className="finance-available">
         <div>
-          <span>Available to request</span>
-          <strong>TZS {money(data.available)}</strong>
-          <small>Reconciled funds, before or after your event</small>
+          <span>{data.payout_mode === 'ecofy' ? 'You receive' : 'Available to request'}</span>
+          <strong>
+            {data.payout_mode === 'ecofy'
+              ? preview
+                ? `TZS ${money(preview.amount)}`
+                : data.available < data.minimum
+                  ? 'TZS 0'
+                  : '—'
+              : `TZS ${money(data.available)}`}
+          </strong>
+          <small>
+            {preview
+              ? `${networks[preview.channel]} · account ending ${preview.account.slice(-4)}`
+              : data.payout_mode === 'ecofy'
+                ? data.withdrawal_preview?.status === 'unavailable'
+                  ? 'Withdrawal quote currently unavailable'
+                  : 'Choose a payout destination for the final amount'
+                : 'Reconciled funds, before or after your event'}
+          </small>
         </div>
         <button
           className="button primary"
@@ -278,10 +305,10 @@ export function OrganizerEarnings() {
         </button>
       </div>
       <dl className="finance-balances">
-        {data.provider_fee_allowance_bps > 0 && (
+        {preview && preview.remaining > 0 && (
           <div>
-            <dt>Remaining provider-fee allowance ({data.provider_fee_allowance_bps / 100}%)</dt>
-            <dd>TZS {money(data.provider_fee_reserve)}</dd>
+            <dt>Balance remaining after this payout</dt>
+            <dd>TZS {money(preview.remaining)}</dd>
           </div>
         )}
         <div>
@@ -306,7 +333,7 @@ export function OrganizerEarnings() {
         {data.automatic_disbursement
           ? data.demo
             ? 'Demo payouts simulate recipient verification and a TZS 100 withdrawal fee. No real money moves.'
-            : 'Ecofy payouts use verified account names and quoted withdrawal fees. Only matured earnings are available.'
+            : 'Withdrawal fees include collection and payout charges. Final fees are confirmed before sending. Only matured earnings are available.'
           : 'Payouts are reviewed and transferred manually.'}{' '}
         Minimum request: TZS {money(data.minimum)}.
       </p>
@@ -427,7 +454,10 @@ export function OrganizerEarnings() {
       {requesting && (
         <PayoutForm
           finance={data}
-          onClose={() => setRequesting(false)}
+          onClose={() => {
+            setRequesting(false);
+            void load();
+          }}
           onSubmitted={(payout) => {
             setRequesting(false);
             void load();
@@ -504,11 +534,13 @@ function ProviderPayoutForm({
   onSubmitted: (payout?: Payout) => void;
 }) {
   const { user } = useApp();
-  const [amount, setAmount] = useState(''),
-    [account, setAccount] = useState(user?.phone || ''),
-    [recipientName, setRecipientName] = useState(user?.name || ''),
-    [destination, setDestination] = useState('mobile_money'),
-    [channel, setChannel] = useState('MPESA'),
+  const preview =
+    finance.withdrawal_preview?.status === 'quoted' ? finance.withdrawal_preview : null;
+  const [amount, setAmount] = useState(preview ? String(preview.amount) : ''),
+    [account, setAccount] = useState(preview?.account || user?.phone || ''),
+    [recipientName, setRecipientName] = useState(preview?.account_name || user?.name || ''),
+    [destination, setDestination] = useState(preview?.destination_type || 'mobile_money'),
+    [channel, setChannel] = useState(preview?.channel || 'MPESA'),
     [password, setPassword] = useState(''),
     [quote, setQuote] = useState<ProviderQuote | null>(null),
     [acceptedName, setAcceptedName] = useState(false),
@@ -812,9 +844,9 @@ function ProviderPayoutForm({
         ) : (
           <>
             <p className="finance-note">
-              Available before the final withdrawal fee: TZS {money(finance.available)}. Unused fee
-              allowance: TZS {money(finance.provider_fee_reserve)}. The actual quote determines the
-              amount you can receive.
+              {preview
+                ? `You receive TZS ${money(preview.amount)}. Total withdrawal fees: TZS ${money(preview.combined_fees)} (including collection charges).`
+                : 'Choose your amount and destination. All withdrawal fees are confirmed before sending.'}
             </p>
             <label>
               Amount to recipient (TZS)

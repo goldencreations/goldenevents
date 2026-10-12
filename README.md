@@ -288,6 +288,15 @@ actions are audited. Refunds of released demo sales are blocked pending reconcil
 
 ### Ecofy withdrawals
 
+The live Revenue dashboard shows a quoted net **You receive** amount for the
+organizer's most recently chosen destination, not the allowance-based balance.
+Collection and confirmed/reserved/quoted payout costs are grouped as **Withdrawal
+fees**, while the platform cut remains separate. Up to four bounded, cached preview
+quotes find a safe full-balance recipient amount; concurrent reads share one preview.
+Previews never create a payout, send an OTP, reserve funds, or expose a provider
+quote ID. Missing destinations and provider outages show no guaranteed take-home
+amount. The actual withdrawal is quoted again and freshly authorized as usual.
+
 `PROVIDER_FEE_ALLOWANCE_BPS=250` reserves a conservative 2.5% of matured ticket
 sales for collection and withdrawal fees combined, separately from the platform
 fee. This is an allowance, not a claimed provider tariff or platform revenue.

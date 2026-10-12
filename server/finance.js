@@ -127,6 +127,10 @@ export function organizerFinance(db, config, user) {
       payouts.filter((p) => p.status === 'paid'),
       'payout_fee',
     ),
+    payout_fees_reserved: sum(
+      payouts.filter((p) => ['requested', 'processing'].includes(p.status)),
+      'payout_fee',
+    ),
     verification: payoutVerificationMode(config),
     verification_phone_ready:
       payoutVerificationMode(config) !== 'nextsms' || !!verifiedPhone(db, user.id),
@@ -165,6 +169,117 @@ export function organizerFinance(db, config, user) {
 }
 function canCoverPayout(finance, amount, fee = 0) {
   return amount <= finance.available && amount + fee <= finance.withdrawal_capacity;
+}
+const withdrawalPreviewCaches = new WeakMap();
+export async function organizerFinancePreview(db, config, user) {
+  const finance = organizerFinance(db, config, user);
+  if (config.payoutDriver !== 'ecofy') return { ...finance, withdrawal_preview: null };
+  if (finance.available < finance.minimum || finance.shortfall)
+    return { ...finance, withdrawal_preview: { status: 'below_minimum' } };
+  const destination = db
+    .prepare(
+      `SELECT * FROM payout_quotes WHERE user_id=? AND driver=?
+    ORDER BY created_at DESC LIMIT 1`,
+    )
+    .get(user.id, config.payoutDriver);
+  if (!destination) return { ...finance, withdrawal_preview: { status: 'destination_required' } };
+  const name =
+    destination.account_name || db.prepare('SELECT name FROM users WHERE id=?').get(user.id).name;
+  const fingerprint = tokenHash(
+    JSON.stringify([
+      user.id,
+      finance.available,
+      finance.withdrawal_capacity,
+      finance.provider_fees,
+      finance.payout_fees,
+      finance.payout_fees_reserved,
+      destination.destination_type,
+      destination.channel,
+      destination.account,
+      name,
+    ]),
+  );
+  let cache = withdrawalPreviewCaches.get(db);
+  if (!cache) {
+    cache = new Map();
+    withdrawalPreviewCaches.set(db, cache);
+  }
+  const existing = cache.get(user.id);
+  if (existing?.fingerprint === fingerprint && existing.expires > Date.now()) {
+    const preview = await existing.promise;
+    const current = organizerFinance(db, config, user);
+    return {
+      ...current,
+      withdrawal_preview:
+        current.available === finance.available &&
+        current.withdrawal_capacity === finance.withdrawal_capacity
+          ? preview
+          : { status: 'unavailable' },
+    };
+  }
+  // Preview quotes never create local payout requests or expose a provider quote ID.
+  const promise = (async () => {
+    const wallet = await ecofyBalance(config);
+    const uncertain = db
+      .prepare(
+        `SELECT COALESCE(SUM(amount+payout_fee),0) AS n FROM payout_requests
+      WHERE driver='ecofy' AND status='processing' AND provider_id IS NULL`,
+      )
+      .get().n;
+    if (wallet.available - uncertain < finance.withdrawal_capacity)
+      return { status: 'unavailable' };
+    let amount = finance.available,
+      best = null;
+    const started = Date.now();
+    const seen = new Set();
+    for (let step = 0; step < 4 && amount >= finance.minimum && !seen.has(amount); step++) {
+      if (step && Date.now() - started > 10000) return { status: 'unavailable' };
+      seen.add(amount);
+      const q = await ecofyQuote(config, {
+        ...destination,
+        id: tokenHash([fingerprint, Math.floor(Date.now() / 60000), amount].join(':')),
+        amount,
+        account_name: name,
+        skip_account_check: 1,
+      });
+      if (q.expires_at <= Date.now()) throw new Error('Preview expired.');
+      if (canCoverPayout(finance, q.amount, q.fee) && (!best || q.amount > best.amount)) best = q;
+      const next = Math.max(0, Math.min(finance.available, finance.withdrawal_capacity - q.fee));
+      if (next === amount) break;
+      amount = next;
+    }
+    if (!best) return { status: 'below_minimum' };
+    if (best.expires_at <= Date.now()) return { status: 'unavailable' };
+    return {
+      status: 'quoted',
+      amount: best.amount,
+      fee: best.fee,
+      total: best.total,
+      remaining: finance.withdrawal_capacity - best.total,
+      combined_fees:
+        finance.provider_fees + finance.payout_fees + finance.payout_fees_reserved + best.fee,
+      expires_at: Math.min(best.expires_at, Date.now() + 60000),
+      account: destination.account,
+      account_name: best.account_name,
+      destination_type: destination.destination_type,
+      channel: destination.channel,
+    };
+  })().catch(() => ({ status: 'unavailable' }));
+  const entry = { fingerprint, expires: Date.now() + 60000, promise };
+  cache.set(user.id, entry);
+  if (cache.size > 256) cache.delete(cache.keys().next().value);
+  const preview = await promise;
+  if (preview.status === 'quoted') entry.expires = preview.expires_at;
+  else if (preview.status === 'unavailable') entry.expires = Date.now() + 10000;
+  const current = organizerFinance(db, config, user);
+  return {
+    ...current,
+    withdrawal_preview:
+      current.available === finance.available &&
+      current.withdrawal_capacity === finance.withdrawal_capacity
+        ? preview
+        : { status: 'unavailable' },
+  };
 }
 export function adminFinance(db, config, user) {
   administrator(user);
