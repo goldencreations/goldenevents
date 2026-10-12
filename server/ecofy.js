@@ -3,7 +3,7 @@ import { completeOrder, HttpError } from './domain.js';
 
 const statuses = new Set(['created', 'pending', 'processing', 'succeeded', 'failed', 'cancelled']);
 
-async function request(config, pathname, options = {}) {
+export async function ecofyRequest(config, pathname, options = {}) {
   const response = await fetch(`${config.ecofyBaseUrl}${pathname}`, {
     ...options,
     redirect: 'error',
@@ -17,6 +17,8 @@ async function request(config, pathname, options = {}) {
   const data = await response.json();
   if (!response.ok) {
     const error = new Error('Ecofy request could not be completed.');
+    error.code = typeof data?.error?.code === 'string' ? data.error.code : 'unknown';
+    error.httpStatus = response.status;
     // Only documented pre-creation validation/access errors prove no charge was created.
     error.definitive =
       [400, 401, 403, 422].includes(response.status) &&
@@ -38,6 +40,7 @@ async function request(config, pathname, options = {}) {
   }
   return data;
 }
+const request = ecofyRequest;
 
 function validatePayment(payment, order, expectedId) {
   if (
@@ -153,7 +156,30 @@ export async function verifyEcofy(db, order, config, paymentId) {
   storePayment(db, current, payment);
   if (!['paid', 'review', 'refunded'].includes(current.status))
     db.prepare('UPDATE orders SET provider_status=? WHERE id=?').run(payment.status, current.id);
-  if (payment.status === 'succeeded') return completeOrder(db, current.id, config);
+  if (payment.status === 'succeeded') {
+    if (
+      Number.isSafeInteger(payment.fee) &&
+      payment.fee >= 0 &&
+      Number.isSafeInteger(payment.net) &&
+      payment.net >= 0 &&
+      payment.fee + payment.net === current.amount
+    ) {
+      const mature = db
+        .prepare('SELECT * FROM ecofy_maturations WHERE payment_id=? AND net=?')
+        .get(payment.id, payment.net);
+      const existing = db
+        .prepare('SELECT * FROM ecofy_collection_finance WHERE order_id=?')
+        .get(current.id);
+      if (existing && (existing.fee !== payment.fee || existing.net !== payment.net))
+        throw new Error('Ecofy collection fee changed after verification.');
+      db.prepare(
+        `INSERT INTO ecofy_collection_finance (order_id,fee,net,matured_at,verified_at) VALUES (?,?,?,?,?)
+        ON CONFLICT(order_id) DO UPDATE SET verified_at=excluded.verified_at,
+        matured_at=COALESCE(ecofy_collection_finance.matured_at,excluded.matured_at)`,
+      ).run(current.id, payment.fee, payment.net, mature?.observed_at || null, Date.now());
+    }
+    return completeOrder(db, current.id, config);
+  }
   if (['failed', 'cancelled'].includes(payment.status)) {
     db.prepare("UPDATE orders SET status=? WHERE id=? AND status IN ('pending','expired')").run(
       payment.status === 'cancelled' && payment.failure_code === 'expired' ? 'expired' : 'failed',

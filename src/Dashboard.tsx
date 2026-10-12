@@ -36,6 +36,9 @@ import { api, send, money, dateLabel, timeLabel, shortPhone, downloadCSV } from 
 import { useApp } from './context';
 import { Brand, Spinner, ErrorBox, Status, Empty, EventCard, EventImage, Modal } from './ui';
 import type { Event, Order, Guest, Delivery, Stats, User } from './types';
+import { OrganizerEarnings, AdminPayouts } from './Finance';
+import { PhoneSecurity } from './PhoneSecurity';
+import { OtpActivity } from './OtpActivity';
 
 const navigation = [
   { to: '/dashboard', label: 'Overview', icon: LayoutDashboard, end: true },
@@ -998,9 +1001,6 @@ function GuestsPage({ guests, events }: { guests: Guest[]; events: Event[] }) {
   );
 }
 function RevenuePage({ stats, orders }: { stats: Stats; orders: Order[] }) {
-  const { config } = useApp();
-  const paid = orders.filter((o) => o.status === 'paid'),
-    refunded = orders.filter((o) => o.status === 'refunded');
   return (
     <>
       <PageHeading title="Revenue" subtitle="Ticket sales and payment activity">
@@ -1017,32 +1017,8 @@ function RevenuePage({ stats, orders }: { stats: Stats; orders: Order[] }) {
           Export report
         </button>
       </PageHeading>
-      <StatGrid stats={stats} />
-      {config.demo && (
-        <div className="notice">
-          <Banknote size={19} />
-          <span>These are simulated sales. No money has been collected or paid out.</span>
-        </div>
-      )}
+      <OrganizerEarnings />
       <SalesChart stats={stats} />
-      <div className="revenue-summary">
-        <div>
-          <span>Paid orders</span>
-          <strong>{paid.length}</strong>
-        </div>
-        <div>
-          <span>Gross ticket sales</span>
-          <strong>TZS {money(stats.revenue)}</strong>
-        </div>
-        <div>
-          <span>Refunded orders</span>
-          <strong>TZS {money(refunded.reduce((n, o) => n + o.amount, 0))}</strong>
-        </div>
-        <div>
-          <span>Organizer payouts</span>
-          <strong className="muted">Not connected</strong>
-        </div>
-      </div>
       <div className="section-heading table-section-heading">
         <h2>Payment history</h2>
       </div>
@@ -1441,6 +1417,7 @@ function SettingsPage() {
           </form>
         </div>
       )}
+      {!passwordRequired && user?.role !== 'scanner' && <PhoneSecurity />}
       <div className="settings-section">
         <div>
           <h2>Password</h2>
@@ -1493,7 +1470,9 @@ function SettingsPage() {
                     ? 'Demo payments'
                     : config.paymentDriver === 'disabled'
                       ? 'Not connected'
-                      : 'Flutterwave'}
+                      : config.paymentDriver === 'ecofy'
+                        ? 'Ecofy'
+                        : 'Flutterwave'}
                 </small>
               </span>
               <Status
@@ -1521,9 +1500,19 @@ function SettingsPage() {
             <div>
               <Banknote size={21} />
               <span>
-                Organizer payouts<small>Not connected</small>
+                Organizer payouts
+                <small>
+                  {config.payoutDriver === 'manual'
+                    ? 'Manual review'
+                    : config.payoutDriver === 'demo'
+                      ? 'Simulated payouts'
+                      : 'Ecofy withdrawals'}{' '}
+                  · {config.platformFeeBps / 100}% platform fee
+                </small>
               </span>
-              <Status status="paused" />
+              <Link to="/dashboard/revenue" className="button small secondary">
+                View earnings
+              </Link>
             </div>
           </div>
         </div>
@@ -1560,6 +1549,8 @@ function AdminPage() {
   return (
     <>
       <PageHeading title="Administration" subtitle="Platform accounts and events" />
+      <AdminPayouts />
+      <OtpActivity />
       {error && <ErrorBox>{error}</ErrorBox>}
       {!data ? (
         <Spinner />

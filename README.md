@@ -161,8 +161,8 @@ recovery uses read-only paginated payment lookup rather than initiating a new
 charge. Automatic reconciliation covers the first 24 hours and at most 1,000
 listed payments per lookup; unresolved bookings need provider/manual review.
 
-This integration handles mobile-money collections only, not QR payment checkout,
-refunds, organizer payouts, or wallet withdrawals. Payment keys can move money:
+The integration handles mobile-money collections and optional quoted withdrawals,
+not QR payment checkout or refunds. Payment keys can move money:
 keep them only in the mode-600 VPS environment file. Do not enable public sales
 until a small authorized payment, decline, timeout/retry, and webhook delivery
 have been tested against Ecofy. Mock tests do not certify the live payment rail.
@@ -248,12 +248,99 @@ before launch. Names are supplied by the buyer, not independently verified ident
 After claiming, keep the private ticket link; cross-device ticket recovery and
 re-entry are not part of this feature yet.
 
+## Organizer earnings and payout requests
+
+For SMS verification setup and security-phone enrollment, see [NextSMS OTP](docs/nextsms-otp.md).
+
+Revenue shows paid ticket sales, Golden Events fees, confirmed provider fees,
+estimated organizer earnings, held funds, reserved requests, and completed payouts.
+`PLATFORM_FEE_BPS=500` means 5%, deducted from the sale rather than added to the
+buyer's total. The rate and whole-TZS fee are snapshotted when checkout is reserved;
+rounding is nearest shilling, half up, per order. Later rate changes do not reprice
+existing orders. Older orders without snapshots are treated as zero platform fee,
+explicitly labelled legacy, and are not charged retroactively.
+
+With `PAYOUT_DRIVER=manual`, verified collections are **not** automatically spendable wallet funds. An admin
+must reconcile each paid sale against funds actually received and enter the actual
+provider fee and statement reference in Administration. Reconciliation is immutable
+and idempotent. Both pre-event and post-event releases require a review of refund
+exposure; cancelled events are held. This is a manual records workflow, not provider
+balance verification or automated settlement.
+
+Organizers request at least `PAYOUT_MINIMUM_TZS=1000` to a Tanzanian mobile-money
+number. The account password is required; a five-minute OTP is bound to that exact
+amount, recipient and number. NextSMS sends it to the organizer's separately verified
+security phone, never to an arbitrary payout destination. The legacy email option
+requires SMTP with TLS and `DELIVERY_DRIVER=live`.
+No live verification code is returned or placed in the delivery outbox. Codes are
+hashed, limited to five guesses, throttled across resends, invalidated on password
+changes, and replaced by a newer challenge. OTP confirms account control, **not**
+the beneficiary's legal identity. Manual-mode admins must independently check recipient ownership.
+Local demo/outbox mode displays a clearly labelled simulated code and never sends money.
+
+Confirmation reserves the amount atomically. Retries are idempotent; other users
+and scanners cannot view or confirm requests. Organizers can cancel only requests
+awaiting review. Admins approve for manual transfer, then record a completed transfer
+with a unique provider reference and explicit confirmation that the full requested
+amount was received. A processing request remains reserved until a definite outcome
+is known; rejecting it requires confirmation that no transfer was sent. Review
+actions are audited. Refunds of released demo sales are blocked pending reconciliation.
+
+### Ecofy withdrawals
+
+`PAYOUT_DRIVER=ecofy` explicitly enables real transfers using the existing server-only
+Ecofy credentials. Production templates default to `manual`; local demo payments
+default to `demo`, which simulates a TZS 100 withdrawal fee and a recipient name,
+never calls Ecofy, and never sends money. No live withdrawals are enabled by this
+change and no VPS settings are modified. The implementation follows section 13
+of the [supplied API contract](https://claude.ai/artifact/EowsphkAJWdRyDswcY2yze);
+the production API origin remains `https://ecofypay.ecofy.co.tz`, not the older
+origin printed in the document. Live merchant permissions and the rail have not
+been certified by these mocked tests.
+
+The worker reads authoritative succeeded collections for `fee` and `net`, and
+matches each payment to its owning organizer. An authenticated `matured` movement
+in `GET /v1/transactions` must match the payment ID and collected net before funds
+are released. A future timestamp or an aggregate merchant balance alone does not
+credit an organizer. Missing, invalid or changed fees are held. Statement pages
+are scanned incrementally, with a persisted cursor; a scan restarts at the newest
+page after reaching the end. Historical payments are backfilled read-only in
+batches. Cancelled events are held, and Golden Events' snapshotted cut is excluded
+from organizer credit. `GET /v1/balance` is checked separately to cap transfers to
+available provider funds. No other organizer can spend the merchant's shared cash.
+
+The organizer enters amount and destination (documented channels: MPESA,
+AIRTELMONEY, CRDB, NMB) and reauthenticates with their password. A durable,
+idempotent `POST /v1/payouts/quote` resolves the account name, last four digits,
+fee and total. No money is moved by quoting. The organizer must recognize and
+confirm that name and fee before an OTP can be sent. The OTP binds the
+quote, verified name, destination, amount and withdrawal fee. Expired quotes require
+a new quote and fresh confirmation; they are never silently replaced. Bank account
+numbers preserve leading zeroes. NextSMS (or the explicit legacy SMTP option) is required for live OTPs.
+
+OTP confirmation atomically reserves **amount + withdrawal fee**, consumes the
+quote once, and creates a durable transfer job. `POST /v1/payouts` always uses the
+same quote, reference and idempotency key for that logical withdrawal. A confirmed
+GET matching ID, reference, amount, fee, total and final status is required to mark
+it paid or release a failed transfer. A lost POST response triggers lookup by
+reference, then GET reconciliation or a retry with the identical key. Unknown
+outcomes remain reserved, including after quote expiry or a restart; they cannot
+be cancelled or manually recorded as another transfer. Jobs retry every 5 seconds
+to 5 minutes and never release money simply because retries were exhausted.
+
+Organizer history shows recipient amount and withdrawal fee separately; payout
+debits and reservations include both. Manual administration remains available for
+manual requests only. Audit records, consumed quotes and fee snapshots survive
+job cleanup and repeated database migrations. Demo refunds that would consume
+already reserved or withdrawn funds are rejected atomically. Real refunds still
+require provider handling and ledger reconciliation.
+
 ## What is not live yet
 
 This is a working local first version, not an approved payment business.
 Provider integration code is covered with mocked verification tests but has not
 been exercised against a merchant account. Before live sales, complete a provider
-sandbox and real-device trial. Organizer payouts are not implemented. Live refunds
+sandbox and real-device trial. Automatic organizer transfers require explicit activation and an authorized live trial. Live refunds
 must be handled with the provider; the application refuses to mark them refunded
 or claim money was returned. Demo refunds invalidate all tickets in an unused order.
 Cancelled events stop admission but require separate refunds for paid orders.

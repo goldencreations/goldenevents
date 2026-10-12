@@ -4,10 +4,13 @@ import { transaction } from './db.js';
 import { tokenHash, safeEqual } from './auth.js';
 import { HttpError, normalizePhone } from './domain.js';
 import { sendTwilio } from './providers.js';
+import { smsAvailable } from './sms.js';
+import { issueOtp, consumeOtp, otpReceiptProof, otpBinding } from './otp.js';
 
 export function sharingMode(config) {
   if (!config.production && config.paymentDriver === 'demo' && config.deliveryDriver === 'outbox')
     return 'demo';
+  if (smsAvailable(config)) return 'nextsms';
   return config.deliveryDriver !== 'outbox' &&
     process.env.TWILIO_ACCOUNT_SID &&
     process.env.TWILIO_AUTH_TOKEN &&
@@ -131,10 +134,42 @@ export function pendingInvite(db, token) {
   return row;
 }
 
-export async function requestClaimCode(db, config, token) {
+function claimOtpContext(invite) {
+  return {
+    purpose: 'ticket_claim',
+    phone: invite.phone,
+    binding: otpBinding(['ticket_claim', invite.id, invite.token, invite.ticket_id]),
+  };
+}
+export async function requestClaimCode(db, config, token, ip) {
   const mode = sharingMode(config);
   if (mode === 'disabled')
     throw new HttpError(503, 'SMS verification is unavailable. Please try again later.');
+  if (mode === 'nextsms') {
+    const invite = pendingInvite(db, token);
+    const challenge = await issueOtp(
+      db,
+      config,
+      { ...claimOtpContext(invite), ip },
+      {
+        expiresAt: invite.expires_at,
+        afterCreate: (otp) => {
+          const current = pendingInvite(db, token);
+          if (current.total_attempts >= 10)
+            throw new HttpError(429, 'Too many incorrect codes. Ask for a new invitation.');
+          db.prepare(
+            'UPDATE ticket_invites SET otp_challenge_id=?,otp_hash=NULL,otp_mode=?,otp_expires_at=?,otp_attempts=0,last_sent=? WHERE id=?',
+          ).run(otp.id, mode, otp.expires_at, Date.now(), invite.id);
+        },
+      },
+    );
+    return {
+      phone: maskedPhone(invite.phone),
+      expires_at: challenge.expires_at,
+      resend_after: challenge.resend_after,
+      verification_mode: mode,
+    };
+  }
   const code = String(randomInt(100000, 1000000));
   const hash = tokenHash(`${token}:${code}`);
   const invite = transaction(db, () => {
@@ -200,6 +235,18 @@ export function claimTicket(db, config, token, input) {
     const existing = db.prepare('SELECT * FROM ticket_invites WHERE token=?').get(token);
     if (existing?.otp_mode === 'demo' && sharingMode(config) !== 'demo')
       throw new HttpError(410, 'Request a new verification code.');
+    if (existing?.otp_mode === 'nextsms' && sharingMode(config) !== 'nextsms')
+      throw new HttpError(410, 'Request a new verification code.');
+    if (
+      existing?.status === 'claimed' &&
+      existing.otp_mode === 'nextsms' &&
+      safeEqual(existing.claim_key, tokenHash(parsed.data.claim_key)) &&
+      otpReceiptProof(db, config, existing.otp_challenge_id, claimOtpContext(existing))
+    ) {
+      return {
+        token: db.prepare('SELECT token FROM tickets WHERE id=?').get(existing.ticket_id).token,
+      };
+    }
     // A lost HTTP response can be retried by the same claimant without rotating again.
     if (
       existing?.status === 'claimed' &&
@@ -211,11 +258,25 @@ export function claimTicket(db, config, token, input) {
       return { token: ticket.token };
     }
     const invite = pendingInvite(db, token);
-    if (!invite.otp_hash || invite.otp_expires_at <= Date.now())
+    if ((invite.otp_mode !== 'nextsms' && !invite.otp_hash) || invite.otp_expires_at <= Date.now())
       throw new HttpError(410, 'Your verification code has expired. Request a new code.');
     if (invite.otp_attempts >= 5 || invite.total_attempts >= 10)
       throw new HttpError(429, 'Too many incorrect codes. Request a new code or invitation.');
-    if (!safeEqual(invite.otp_hash, tokenHash(`${token}:${parsed.data.code}`))) {
+    if (invite.otp_mode === 'nextsms') {
+      const verified = consumeOtp(
+        db,
+        config,
+        invite.otp_challenge_id,
+        claimOtpContext(invite),
+        parsed.data.code,
+      );
+      if (!verified.ok) {
+        db.prepare(
+          'UPDATE ticket_invites SET otp_attempts=otp_attempts+1,total_attempts=total_attempts+1 WHERE id=?',
+        ).run(invite.id);
+        return { error: verified.error, status: verified.status };
+      }
+    } else if (!safeEqual(invite.otp_hash, tokenHash(`${token}:${parsed.data.code}`))) {
       db.prepare(
         'UPDATE ticket_invites SET otp_attempts=otp_attempts+1,total_attempts=total_attempts+1 WHERE id=?',
       ).run(invite.id);
@@ -232,6 +293,6 @@ export function claimTicket(db, config, token, input) {
     ).run(tokenHash(parsed.data.claim_key), now, invite.id);
     return { token: ticketToken };
   });
-  if (result.error) throw new HttpError(400, result.error);
+  if (result.error) throw new HttpError(result.status || 400, result.error);
   return result;
 }

@@ -109,7 +109,92 @@ export function openDatabase(dataDir) {
     );
     if (!orderColumns.has('provider_status'))
       db.exec('ALTER TABLE orders ADD COLUMN provider_status TEXT');
+    if (!orderColumns.has('platform_fee_bps'))
+      db.exec('ALTER TABLE orders ADD COLUMN platform_fee_bps INTEGER');
+    if (!orderColumns.has('platform_fee'))
+      db.exec('ALTER TABLE orders ADD COLUMN platform_fee INTEGER');
     db.exec(`
+      CREATE TABLE IF NOT EXISTS verified_phones (
+        user_id TEXT PRIMARY KEY REFERENCES users(id), phone TEXT NOT NULL, verified_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS otp_challenges (
+        id TEXT PRIMARY KEY, user_id TEXT REFERENCES users(id), phone TEXT NOT NULL,
+        purpose TEXT NOT NULL CHECK(purpose IN ('phone_verification','payout','ticket_claim')),
+        binding_hash TEXT NOT NULL, code_hash TEXT,
+        status TEXT NOT NULL CHECK(status IN ('pending','sent','verified','expired','locked','superseded','delivery_failed')),
+        attempts INTEGER NOT NULL DEFAULT 0, provider_message_id TEXT,
+        created_at INTEGER NOT NULL, sent_at INTEGER, expires_at INTEGER NOT NULL, verified_at INTEGER,
+        requester_ip_hash TEXT NOT NULL, error_code TEXT, latency_ms INTEGER
+      );
+      CREATE INDEX IF NOT EXISTS idx_otp_phone ON otp_challenges(phone,purpose,created_at);
+      CREATE INDEX IF NOT EXISTS idx_otp_ip ON otp_challenges(requester_ip_hash,created_at);
+      CREATE INDEX IF NOT EXISTS idx_otp_owner ON otp_challenges(user_id,purpose,created_at);
+      CREATE TABLE IF NOT EXISTS ecofy_collection_finance (
+        order_id TEXT PRIMARY KEY REFERENCES orders(id), fee INTEGER NOT NULL CHECK(fee >= 0),
+        net INTEGER NOT NULL CHECK(net >= 0), matured_at TEXT, verified_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS ecofy_maturations (
+        payment_id TEXT PRIMARY KEY, net INTEGER NOT NULL CHECK(net >= 0), observed_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS ecofy_wallet (
+        id INTEGER PRIMARY KEY CHECK(id=1), available INTEGER NOT NULL,
+        pending INTEGER NOT NULL, reserved INTEGER NOT NULL, checked_at INTEGER NOT NULL,
+        before_cursor TEXT
+      );
+      CREATE TABLE IF NOT EXISTS payout_quotes (
+        id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), driver TEXT NOT NULL,
+        idempotency_key TEXT NOT NULL UNIQUE, payload_hash TEXT NOT NULL,
+        amount INTEGER NOT NULL CHECK(amount > 0), destination_type TEXT NOT NULL,
+        channel TEXT NOT NULL, account TEXT NOT NULL, account_name TEXT, external_id TEXT UNIQUE,
+        fee INTEGER, total INTEGER, expires_at INTEGER,
+        status TEXT NOT NULL CHECK(status IN ('quoting','ready','failed')),
+        next_attempt INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_payout_quote_user ON payout_quotes(user_id,created_at);
+      CREATE TABLE IF NOT EXISTS order_settlements (
+        order_id TEXT PRIMARY KEY REFERENCES orders(id),
+        provider_fee INTEGER NOT NULL CHECK(provider_fee >= 0),
+        net INTEGER NOT NULL CHECK(net >= 0),
+        reference TEXT NOT NULL, settled_by TEXT NOT NULL REFERENCES users(id),
+        settled_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS payout_challenges (
+        id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id),
+        idempotency_key TEXT NOT NULL UNIQUE, payload_hash TEXT NOT NULL,
+        amount INTEGER NOT NULL CHECK(amount > 0), phone TEXT NOT NULL,
+        network TEXT NOT NULL, recipient_name TEXT NOT NULL, email TEXT NOT NULL,
+        password_fingerprint TEXT NOT NULL, otp_hash TEXT NOT NULL, mode TEXT NOT NULL,
+        attempts INTEGER NOT NULL DEFAULT 0, expires_at INTEGER NOT NULL,
+        status TEXT NOT NULL CHECK(status IN ('sending','ready','failed','superseded','consumed')),
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_payout_challenges_user ON payout_challenges(user_id,created_at);
+      CREATE TABLE IF NOT EXISTS payout_requests (
+        id TEXT PRIMARY KEY, reference TEXT NOT NULL UNIQUE,
+        user_id TEXT NOT NULL REFERENCES users(id),
+        challenge_id TEXT NOT NULL UNIQUE REFERENCES payout_challenges(id),
+        amount INTEGER NOT NULL CHECK(amount > 0), currency TEXT NOT NULL CHECK(currency='TZS'),
+        phone TEXT NOT NULL, network TEXT NOT NULL, recipient_name TEXT NOT NULL,
+        mode TEXT NOT NULL CHECK(mode IN ('demo','manual')),
+        status TEXT NOT NULL CHECK(status IN ('requested','processing','paid','rejected','cancelled')),
+        created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+        reviewed_by TEXT REFERENCES users(id), note TEXT NOT NULL DEFAULT '',
+        transfer_reference TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_payout_user ON payout_requests(user_id,status);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_payout_transfer ON payout_requests(transfer_reference)
+        WHERE transfer_reference IS NOT NULL;
+      CREATE TABLE IF NOT EXISTS payout_audit (
+        id TEXT PRIMARY KEY, payout_id TEXT NOT NULL REFERENCES payout_requests(id),
+        actor_id TEXT NOT NULL REFERENCES users(id), action TEXT NOT NULL,
+        note TEXT NOT NULL, created_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS payout_jobs (
+        payout_id TEXT PRIMARY KEY REFERENCES payout_requests(id), quote_id TEXT NOT NULL REFERENCES payout_quotes(id),
+        attempts INTEGER NOT NULL DEFAULT 0, next_attempt INTEGER NOT NULL DEFAULT 0,
+        outcome_unknown INTEGER NOT NULL DEFAULT 0, error TEXT
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_payout_job_quote ON payout_jobs(quote_id);
       CREATE TABLE IF NOT EXISTS health_probe (
         id INTEGER PRIMARY KEY CHECK(id=1), checked_at INTEGER NOT NULL
       );
@@ -149,6 +234,35 @@ export function openDatabase(dataDir) {
       CREATE INDEX IF NOT EXISTS idx_verification_phone
         ON ticket_verification_sends(phone_hash, created_at);
     `);
+    for (const [table, fields] of Object.entries({
+      payout_challenges: {
+        quote_id: 'TEXT REFERENCES payout_quotes(id)',
+        payout_fee: 'INTEGER NOT NULL DEFAULT 0',
+        otp_challenge_id: 'TEXT REFERENCES otp_challenges(id)',
+        otp_phone: 'TEXT',
+      },
+      ticket_invites: { otp_challenge_id: 'TEXT REFERENCES otp_challenges(id)' },
+      payout_requests: {
+        driver: "TEXT NOT NULL DEFAULT 'manual'",
+        payout_fee: 'INTEGER NOT NULL DEFAULT 0',
+        provider_id: 'TEXT',
+      },
+    })) {
+      const present = new Set(
+        db
+          .prepare(`PRAGMA table_info(${table})`)
+          .all()
+          .map((c) => c.name),
+      );
+      for (const [name, type] of Object.entries(fields))
+        if (!present.has(name)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${type}`);
+    }
+    db.exec(
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_payout_provider_id ON payout_requests(provider_id) WHERE provider_id IS NOT NULL',
+    );
+    db.exec(
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_consumed_quote ON payout_challenges(quote_id) WHERE status='consumed' AND quote_id IS NOT NULL",
+    );
   });
   return db;
 }

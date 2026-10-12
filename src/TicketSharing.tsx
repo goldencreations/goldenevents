@@ -249,6 +249,8 @@ export function ClaimPage() {
   const [code, setCode] = useState(''),
     [demoCode, setDemoCode] = useState('');
   const [cooldown, setCooldown] = useState(0);
+  const [expiresAt, setExpiresAt] = useState(0),
+    [now, setNow] = useState(Date.now());
   const claimKey = useRef(crypto.randomUUID());
   useEffect(() => {
     let active = true;
@@ -259,6 +261,7 @@ export function ClaimPage() {
     setCode('');
     setDemoCode('');
     setCooldown(0);
+    setExpiresAt(0);
     claimKey.current = crypto.randomUUID();
     api<ClaimData>(`/claims/${token}`)
       .then((data) => {
@@ -279,15 +282,25 @@ export function ClaimPage() {
     const timer = setTimeout(() => setCooldown((n) => Math.max(0, n - 1)), 1000);
     return () => clearTimeout(timer);
   }, [cooldown]);
+  useEffect(() => {
+    if (!expiresAt) return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [expiresAt]);
   const requestCode = async () => {
     setBusy(true);
     setError('');
     try {
-      const result = await send<{ demo_code?: string }>(`/claims/${token}/code`, {});
+      const result = await send<{ demo_code?: string; expires_at?: number; resend_after?: number }>(
+        `/claims/${token}/code`,
+        {},
+      );
       setRequested(true);
       setDemoCode(result.demo_code || '');
       setCode('');
-      setCooldown(60);
+      setCooldown(result.resend_after || 60);
+      setExpiresAt(result.expires_at || 0);
+      setNow(Date.now());
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -372,7 +385,17 @@ export function ClaimPage() {
                       onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                     />
                   </label>
-                  <button className="button primary full" disabled={busy || code.length !== 6}>
+                  {expiresAt > 0 && (
+                    <p className="muted" role="status">
+                      {expiresAt > now
+                        ? `Code expires in ${Math.ceil((expiresAt - now) / 1000)}s`
+                        : 'Code expired. Request a new code.'}
+                    </p>
+                  )}
+                  <button
+                    className="button primary full"
+                    disabled={busy || code.length !== 6 || (expiresAt > 0 && expiresAt <= now)}
+                  >
                     {busy ? <Loader2 className="spin" size={18} /> : <Ticket size={18} />}Claim my
                     ticket
                   </button>

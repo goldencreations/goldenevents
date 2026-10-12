@@ -301,6 +301,48 @@ export function createHealthMonitor(db, config, options = {}) {
           );
         }
       }
+      if (config.nextsmsEnabled) {
+        try {
+          const failed = db
+            .prepare(
+              "SELECT COUNT(*) AS n FROM otp_challenges WHERE status='delivery_failed' AND created_at>?",
+            )
+            .get(clock() - 15 * 60000).n;
+          const accepted = db
+            .prepare('SELECT COUNT(*) AS n FROM otp_challenges WHERE sent_at>?')
+            .get(clock() - 15 * 60000).n;
+          components.push(
+            component(
+              'otp',
+              'SMS verification',
+              failed ? 'degraded' : accepted ? 'operational' : 'unknown',
+              failed
+                ? 'Recent SMS requests could not be confirmed.'
+                : accepted
+                  ? 'Recent SMS requests accepted by the provider; handset delivery is not monitored.'
+                  : 'Configured; no recent SMS acceptance observed.',
+            ),
+          );
+        } catch {
+          components.push(
+            component(
+              'otp',
+              'SMS verification',
+              'unknown',
+              'SMS verification records could not be checked.',
+            ),
+          );
+        }
+      } else {
+        components.push(
+          component(
+            'otp',
+            'SMS verification',
+            'not_configured',
+            'NextSMS verification is not enabled.',
+          ),
+        );
+      }
       const snapshot = {
         status: overallHealth(components),
         checked_at: new Date(clock()).toISOString(),

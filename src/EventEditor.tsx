@@ -303,6 +303,10 @@ export function EventEditor() {
                     Add type
                   </button>
                 </div>
+                <p className="finance-note">
+                  Golden Events keeps {config.platformFeeBps / 100}% of each new sale. Provider fees
+                  are separate; your earnings and payout balance appear under Revenue.
+                </p>
                 <div className="ticket-editor-labels">
                   <span>Ticket name</span>
                   <span>Price (TZS)</span>

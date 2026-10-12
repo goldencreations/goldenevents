@@ -24,9 +24,28 @@ import {
 import { initiatePayment } from './providers.js';
 import { verifyEcofySignature } from './ecofy.js';
 import { createHealthMonitor } from './health.js';
+import { smsAvailable } from './sms.js';
+import {
+  requestPhoneCode,
+  verifyPhoneCode,
+  verifiedPhone,
+  maskOtpPhone,
+  otpOverview,
+} from './otp.js';
 import { renderPage } from './metadata.js';
 import { transaction } from './db.js';
 import { scannerEmailAvailable, sendScannerInvitation } from './scanner-mail.js';
+import {
+  organizerFinance,
+  adminFinance,
+  reconcileOrder,
+  requestPayoutCode,
+  cancelPayout,
+  reviewPayout,
+  requestPayoutQuote,
+  submitPayout,
+  payoutVerificationMode,
+} from './finance.js';
 import {
   scannerEvents,
   manageGate,
@@ -103,6 +122,20 @@ export function createApp(db, config, health = createHealthMonitor(db, config)) 
     standardHeaders: 'draft-8',
     legacyHeaders: false,
     message: { error: 'Too many ticket verification attempts. Try again later.' },
+  });
+  const otpSendLimit = rateLimit({
+    windowMs: 60000,
+    limit: 3,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+    message: { error: 'Too many verification requests. Try again shortly.' },
+  });
+  const otpVerifyLimit = rateLimit({
+    windowMs: 60000,
+    limit: 10,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+    message: { error: 'Too many verification attempts. Try again shortly.' },
   });
   app.use((req, res, next) => {
     const host = req.hostname;
@@ -187,6 +220,9 @@ export function createApp(db, config, health = createHealthMonitor(db, config)) 
     res.status(result.status === 'ready' ? 200 : 503).json(result);
   });
   app.get('/api/status', async (_req, res) => res.json(await health.collect()));
+  app.get('/api/admin/otp', auth, admin, (_req, res) =>
+    res.json({ available: smsAvailable(config), ...otpOverview(db) }),
+  );
   app.get('/api/config', (_req, res) =>
     res.json({
       baseDomain: config.baseDomain,
@@ -196,6 +232,8 @@ export function createApp(db, config, health = createHealthMonitor(db, config)) 
       deliveryDriver: config.deliveryDriver,
       whatsappDriver: process.env.WHATSAPP_DRIVER || 'twilio',
       ticketSharing: sharingMode(config),
+      platformFeeBps: config.platformFeeBps,
+      payoutDriver: config.payoutDriver,
       demo: config.seedDemo && !config.production,
     }),
   );
@@ -330,6 +368,45 @@ export function createApp(db, config, health = createHealthMonitor(db, config)) 
     if (req.cookies.ge_session)
       db.prepare('DELETE FROM sessions WHERE token=?').run(tokenHash(req.cookies.ge_session));
     res.clearCookie('ge_session', { path: '/' }).json({ ok: true });
+  });
+  app.get('/api/settings/phone', auth, (req, res) => {
+    if (!['organizer', 'admin'].includes(req.user.role))
+      throw new HttpError(403, 'Organizer access required.');
+    const phone = verifiedPhone(db, req.user.id);
+    res.json({
+      available: smsAvailable(config),
+      verified: !!phone,
+      phone: phone ? maskOtpPhone(phone) : null,
+    });
+  });
+  app.post('/api/settings/phone/code', auth, otpSendLimit, async (req, res) =>
+    res.status(202).json(await requestPhoneCode(db, config, req.user, req.body, req.ip)),
+  );
+  app.post('/api/settings/phone/:id/resend', auth, otpSendLimit, async (req, res) => {
+    const row = db
+      .prepare(
+        "SELECT phone FROM otp_challenges WHERE id=? AND user_id=? AND purpose='phone_verification'",
+      )
+      .get(req.params.id, req.user.id);
+    if (!row) throw new HttpError(404, 'Verification request not found.');
+    res
+      .status(202)
+      .json(
+        await requestPhoneCode(
+          db,
+          config,
+          req.user,
+          { phone: row.phone, password: req.body.password },
+          req.ip,
+        ),
+      );
+  });
+  app.post('/api/settings/phone/:id/verify', auth, otpVerifyLimit, (req, res) => {
+    const result = verifyPhoneCode(db, config, req.user, req.params.id, req.body.code);
+    res.json({
+      ...result,
+      user: publicUser(db.prepare('SELECT * FROM users WHERE id=?').get(req.user.id)),
+    });
   });
   app.put('/api/settings', auth, (req, res) => {
     const parsed = z
@@ -489,12 +566,24 @@ export function createApp(db, config, health = createHealthMonitor(db, config)) 
       expires_at: invite.expires_at,
     });
   });
-  app.post('/api/claims/:token/code', claimLimit, async (req, res) => {
-    res.json(await requestClaimCode(db, config, req.params.token));
-  });
-  app.post('/api/claims/:token/accept', claimLimit, (req, res) => {
-    res.json(claimTicket(db, config, req.params.token, req.body));
-  });
+  app.post(
+    '/api/claims/:token/code',
+    claimLimit,
+    (req, res, next) => (sharingMode(config) === 'nextsms' ? otpSendLimit(req, res, next) : next()),
+    async (req, res) => {
+      const result = await requestClaimCode(db, config, req.params.token, req.ip);
+      res.status(result.verification_mode === 'nextsms' ? 202 : 200).json(result);
+    },
+  );
+  app.post(
+    '/api/claims/:token/accept',
+    claimLimit,
+    (req, res, next) =>
+      sharingMode(config) === 'nextsms' ? otpVerifyLimit(req, res, next) : next(),
+    (req, res) => {
+      res.json(claimTicket(db, config, req.params.token, req.body));
+    },
+  );
   app.post('/api/orders/:token/demo', (req, res) => {
     if (config.production || config.paymentDriver !== 'demo')
       throw new HttpError(404, 'Not found.');
@@ -610,6 +699,26 @@ export function createApp(db, config, health = createHealthMonitor(db, config)) 
       .all(req.user.id);
     res.json({ orders: rows.map(({ idempotency_key, provider_id, ...safe }) => safe) });
   });
+  app.get('/api/organizer/finance', (req, res) => res.json(organizerFinance(db, config, req.user)));
+  app.post('/api/organizer/payouts/quote', authLimit, async (req, res) =>
+    res.json({ quote: await requestPayoutQuote(db, config, req.user, req.body) }),
+  );
+  app.post(
+    '/api/organizer/payouts/code',
+    authLimit,
+    (req, res, next) =>
+      payoutVerificationMode(config) === 'nextsms' ? otpSendLimit(req, res, next) : next(),
+    async (req, res) => {
+      const result = await requestPayoutCode(db, config, req.user, req.body, req.ip);
+      res.status(result.mode === 'nextsms' ? 202 : 200).json(result);
+    },
+  );
+  app.post('/api/organizer/payouts/:id/confirm', claimLimit, otpVerifyLimit, async (req, res) =>
+    res.json({ payout: await submitPayout(db, config, req.user, req.params.id, req.body) }),
+  );
+  app.post('/api/organizer/payouts/:id/cancel', (req, res) =>
+    res.json({ payout: cancelPayout(db, config, req.user, req.params.id) }),
+  );
   app.get('/api/organizer/guests', auth, (req, res) =>
     res.json({
       guests: db
@@ -623,28 +732,44 @@ export function createApp(db, config, health = createHealthMonitor(db, config)) 
     res.json({ ticket: checkIn(db, req.user, req.body.event_id, req.body.code) }),
   );
   app.post('/api/organizer/orders/:id/refund', auth, (req, res) => {
-    const order = db
-      .prepare(
-        'SELECT o.* FROM orders o JOIN events e ON e.id=o.event_id WHERE o.id=? AND e.owner_id=?',
+    transaction(db, () => {
+      const order = db
+        .prepare(
+          'SELECT o.* FROM orders o JOIN events e ON e.id=o.event_id WHERE o.id=? AND e.owner_id=?',
+        )
+        .get(req.params.id, req.user.id);
+      if (!order) throw new HttpError(404, 'Order not found.');
+      if (order.status !== 'paid') throw new HttpError(409, 'Only paid orders can be refunded.');
+      if (order.provider !== 'demo' || config.production)
+        throw new HttpError(
+          503,
+          'Live refunds must be completed with your payment provider. No money has been refunded.',
+        );
+      if (db.prepare('SELECT 1 FROM order_settlements WHERE order_id=?').get(order.id))
+        throw new HttpError(
+          409,
+          'This sale has been released for payout. An administrator must reconcile any refund first.',
+        );
+      if (['demo', 'ecofy'].includes(config.payoutDriver)) {
+        const finance = organizerFinance(db, config, req.user);
+        const credit = finance.orders.find((o) => o.id === order.id);
+        if (credit?.released && finance.available < credit.net)
+          throw new HttpError(
+            409,
+            'This sale backs a payout. Resolve the payout before refunding it.',
+          );
+      }
+      if (
+        db
+          .prepare('SELECT id FROM tickets WHERE order_id=? AND checked_in_at IS NOT NULL')
+          .get(order.id)
       )
-      .get(req.params.id, req.user.id);
-    if (!order) throw new HttpError(404, 'Order not found.');
-    if (order.status !== 'paid') throw new HttpError(409, 'Only paid orders can be refunded.');
-    if (order.provider !== 'demo' || config.production)
-      throw new HttpError(
-        503,
-        'Live refunds must be completed with your payment provider. No money has been refunded.',
-      );
-    if (
-      db
-        .prepare('SELECT id FROM tickets WHERE order_id=? AND checked_in_at IS NOT NULL')
-        .get(order.id)
-    )
-      throw new HttpError(409, 'An admitted order cannot be refunded.');
-    db.prepare("UPDATE orders SET status='refunded' WHERE id=?").run(order.id);
-    db.prepare(
-      "UPDATE deliveries SET status='cancelled' WHERE order_id=? AND status IN ('queued','outbox','failed')",
-    ).run(order.id);
+        throw new HttpError(409, 'An admitted order cannot be refunded.');
+      db.prepare("UPDATE orders SET status='refunded' WHERE id=?").run(order.id);
+      db.prepare(
+        "UPDATE deliveries SET status='cancelled' WHERE order_id=? AND status IN ('queued','outbox','failed')",
+      ).run(order.id);
+    });
     res.json({ ok: true });
   });
   app.get('/api/organizer/deliveries', auth, (req, res) =>
@@ -729,6 +854,15 @@ export function createApp(db, config, health = createHealthMonitor(db, config)) 
         )
         .all(),
     }),
+  );
+  app.get('/api/admin/finance', auth, admin, (req, res) =>
+    res.json(adminFinance(db, config, req.user)),
+  );
+  app.post('/api/admin/finance/orders/:id/reconcile', auth, admin, (req, res) =>
+    res.json({ settlement: reconcileOrder(db, config, req.user, req.params.id, req.body) }),
+  );
+  app.post('/api/admin/payouts/:id/review', auth, admin, (req, res) =>
+    res.json({ payout: reviewPayout(db, config, req.user, req.params.id, req.body) }),
   );
   app.post('/api/admin/events/:id/status', auth, admin, (req, res) => {
     if (!['paused', 'published', 'cancelled'].includes(req.body.status))

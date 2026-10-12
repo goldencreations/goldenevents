@@ -1799,6 +1799,20 @@ tbody tr:hover {
 .settings-section h2 {
   font-size: 17px;
 }
+.security-phone-status {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.security-phone-status > svg { flex-shrink: 0; }
+.phone-code-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
 .settings-section > div > p {
   font-size: 12px;
   margin-top: 9px;
@@ -4305,5 +4319,342 @@ tbody tr:hover {
   .ticket-qr img {
     width: 210px;
     height: 210px;
+  }
+}
+
+.finance-section {
+  margin-bottom: 32px;
+  min-width: 0;
+}
+.finance-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 0;
+  font-size: 12px;
+  color: #647168;
+}
+.finance-queue-filter {
+  display: flex;
+  margin: 14px 0;
+}
+.finance-queue-filter input,
+.finance-queue-filter select {
+  max-width: 360px;
+  width: 100%;
+}
+.finance-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.finance-fee {
+  font-size: 12px;
+  color: #59645e;
+}
+.finance-totals {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-block: 1px solid var(--line);
+}
+.finance-totals > div {
+  padding: 22px 18px;
+  border-right: 1px solid var(--line);
+  min-width: 0;
+}
+.finance-totals > div:first-child {
+  padding-left: 0;
+}
+.finance-totals > div:last-child {
+  border: 0;
+}
+.finance-totals span,
+.finance-available span {
+  display: block;
+  font-size: 12px;
+  color: #536158;
+}
+.finance-totals strong {
+  display: block;
+  font-size: 19px;
+  margin: 9px 0;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+.finance-totals small,
+.finance-available small {
+  display: block;
+  font-size: 11px;
+  line-height: 1.6;
+  color: #647168;
+}
+.finance-available {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 26px 0;
+  border-bottom: 1px solid var(--line);
+}
+.finance-available strong {
+  display: block;
+  font-size: 28px;
+  line-height: 1.3;
+  margin: 7px 0;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.finance-balances {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 20px;
+  padding: 20px 0;
+  margin: 0;
+}
+.finance-balances dt {
+  font-size: 11px;
+  color: #647168;
+}
+.finance-balances dd {
+  margin: 7px 0 0;
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.finance-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: #647168;
+  font-size: 12px;
+  line-height: 1.7;
+  margin: 12px 0;
+  overflow-wrap: anywhere;
+}
+.finance-note svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.finance-cell-note {
+  display: block;
+  font-size: 11px;
+  font-weight: 400;
+  color: #647168;
+  margin-top: 5px;
+}
+.finance-amount {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.finance-review-note {
+  min-width: 220px;
+  max-width: 280px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.payout-status {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  line-height: 1.5;
+  font-weight: 600;
+  padding: 4px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+  background: #eef1ef;
+  color: #536158;
+}
+.payout-requested {
+  background: #fff2dc;
+  color: #8b560c;
+}
+.payout-processing {
+  background: #e8f1fc;
+  color: #285a97;
+}
+.payout-paid {
+  background: #e6f4ec;
+  color: #237347;
+}
+.payout-rejected {
+  background: #fdecec;
+  color: #a53d3d;
+}
+.payout-form {
+  display: grid;
+  gap: 17px;
+}
+.payout-verified-name {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px 0;
+  color: #237347;
+}
+.payout-verified-name > svg {
+  flex-shrink: 0;
+}
+.payout-verified-name strong {
+  display: block;
+  color: #202924;
+  font-size: 16px;
+  margin: 8px 0;
+  overflow-wrap: anywhere;
+}
+.payout-verified-name span,
+.payout-verified-name small {
+  display: block;
+  font-size: 12px;
+}
+.payout-verified-name small {
+  color: #647168;
+}
+.payout-destination-modes {
+  display: flex;
+  gap: 18px;
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+.payout-destination-modes legend {
+  font-size: 12px;
+  margin-bottom: 12px;
+}
+.payout-destination-modes label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+}
+.payout-destination-modes input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+}
+.payout-form label {
+  min-width: 0;
+}
+.payout-form label > input,
+.payout-form label > select,
+.payout-form label > textarea {
+  margin-top: 7px;
+}
+.payout-form .finance-note {
+  margin: 0;
+}
+.payout-confirmation {
+  margin: 0;
+  display: grid;
+  gap: 15px;
+  border-block: 1px solid var(--line);
+  padding: 18px 0;
+}
+.payout-confirmation > div {
+  display: grid;
+  grid-template-columns: minmax(80px, 1fr) minmax(0, 2fr);
+  gap: 15px;
+}
+.payout-confirmation dt {
+  font-size: 12px;
+  color: #647168;
+}
+.payout-confirmation dd {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+.payout-confirmation small {
+  display: block;
+  font-size: 12px;
+  font-weight: 400;
+  margin-top: 4px;
+}
+.finance-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 12px;
+  line-height: 1.7;
+  font-weight: 400;
+}
+.payout-form .finance-check input {
+  width: 17px;
+  height: 17px;
+  margin: 3px 0 0;
+  flex-shrink: 0;
+}
+.payout-form .modal-actions {
+  flex-wrap: wrap;
+}
+.provider-payout-form label,
+.provider-payout-form .notice {
+  margin-bottom: 0;
+}
+.provider-payout-form .modal-actions {
+  margin-top: 0;
+}
+.provider-payout-form .modal-actions .primary {
+  flex: 1.4;
+}
+.provider-payout-form .modal-actions .secondary {
+  flex: 1;
+}
+@media (max-width: 540px) {
+  .provider-payout-form {
+    gap: 12px;
+  }
+  .provider-payout-form .payout-verified-name {
+    padding: 6px 0;
+  }
+  .provider-payout-form .payout-confirmation {
+    gap: 10px;
+    padding: 12px 0;
+  }
+  .provider-payout-form .notice {
+    padding: 12px;
+  }
+}
+@media (max-width: 1100px) {
+  .finance-totals,
+  .finance-balances {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .finance-totals > div:nth-child(2) {
+    border-right: 0;
+  }
+  .finance-totals > div:nth-child(-n + 2) {
+    border-bottom: 1px solid var(--line);
+  }
+  .finance-totals > div:nth-child(3) {
+    padding-left: 0;
+  }
+}
+@media (max-width: 540px) {
+  .finance-available {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 16px;
+  }
+  .finance-totals strong {
+    font-size: 17px;
+  }
+  .finance-totals > div {
+    padding: 18px 12px;
+  }
+  .finance-actions {
+    gap: 4px;
+  }
+  .finance-fee {
+    font-size: 11px;
+  }
+  .finance-section .section-heading {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .payout-form .modal-actions .button {
+    flex: 1;
   }
 }

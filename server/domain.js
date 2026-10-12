@@ -2,6 +2,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { transaction } from './db.js';
 import { eventUrl } from './config.js';
+import { platformFee } from './fees.js';
 
 export class HttpError extends Error {
   constructor(status, message) {
@@ -285,6 +286,8 @@ export function reserveOrder(db, input, config) {
       created_at: new Date().toISOString(),
       expires_at: Date.now() + 10 * 60 * 1000,
       paid_at: null,
+      platform_fee_bps: config.platformFeeBps,
+      platform_fee: platformFee(type.price * data.quantity, config.platformFeeBps),
     };
     db.prepare(
       `INSERT INTO orders (${Object.keys(order).join(',')}) VALUES (${Object.keys(order)

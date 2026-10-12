@@ -2,6 +2,7 @@ import nodemailer from 'nodemailer';
 import { sendMetaTickets, metaTemplateReady } from './whatsapp.js';
 import { completeOrder, HttpError } from './domain.js';
 import { initiateEcofy, verifyEcofy, processEcofyPayments } from './ecofy.js';
+import { processPayoutJobs, syncEcofyFinance } from './finance.js';
 
 async function flw(path, options = {}) {
   const response = await fetch(`https://api.flutterwave.com/v3${path}`, {
@@ -203,6 +204,8 @@ export function startWorker(db, config) {
         }
       }
       await processDeliveries(db, config);
+      await processPayoutJobs(db, config);
+      await syncEcofyFinance(db, config);
       config.workerHealth.lastCompleted = Date.now();
       config.workerHealth.lastFailed = null;
     } finally {
