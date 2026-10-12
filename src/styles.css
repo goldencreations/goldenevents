@@ -4436,6 +4436,10 @@ tbody tr:hover {
   flex-shrink: 0;
   margin-top: 2px;
 }
+.finance-fee-adjustment {
+  flex-direction: column;
+  align-items: flex-start;
+}
 .finance-cell-note {
   display: block;
   font-size: 11px;

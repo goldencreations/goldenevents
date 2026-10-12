@@ -1002,11 +1002,28 @@ export async function requestPayoutQuote(db, config, user, input) {
         : await ecofyQuote(config, q);
     if (remote.expires_at <= Date.now())
       throw new HttpError(409, 'This quote expired. Start again.');
-    if (!canCoverPayout(organizerFinance(db, config, current), remote.amount, remote.fee))
-      throw new HttpError(
-        409,
-        'The amount plus withdrawal fee exceeds your earnings. Choose a smaller amount.',
+    const finance = organizerFinance(db, config, current);
+    if (!canCoverPayout(finance, remote.amount, remote.fee)) {
+      const suggested = Math.max(
+        0,
+        Math.min(finance.available, finance.withdrawal_capacity - remote.fee),
       );
+      const error = new HttpError(
+        409,
+        `Ecofy quoted a TZS ${remote.fee} withdrawal fee. The amount plus withdrawal fee exceeds your earnings. ${
+          suggested >= config.payoutMinimum
+            ? `You can try TZS ${suggested}; the fee will be quoted again before payout.`
+            : 'Your balance cannot cover the minimum withdrawal plus this fee.'
+        }`,
+      );
+      error.payoutAdjustment = {
+        quoted_fee: remote.fee,
+        allowance_applied: Math.min(finance.provider_fee_reserve, remote.fee),
+        suggested_amount: suggested,
+        minimum: config.payoutMinimum,
+      };
+      throw error;
+    }
     if (q.driver === 'ecofy') {
       const wallet = await ecofyBalance(config);
       const uncertain = db

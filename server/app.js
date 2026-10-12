@@ -916,7 +916,12 @@ export function createApp(db, config, health = createHealthMonitor(db, config)) 
     if (status === 500) console.error(error);
     res
       .status(status)
-      .json({ error: status === 500 ? 'Something went wrong. Please try again.' : error.message });
+      .json({
+        error: status === 500 ? 'Something went wrong. Please try again.' : error.message,
+        ...(error instanceof HttpError && error.payoutAdjustment
+          ? { payout_adjustment: error.payoutAdjustment }
+          : {}),
+      });
   });
   return app;
 }

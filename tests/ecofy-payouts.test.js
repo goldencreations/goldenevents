@@ -334,7 +334,16 @@ test('fees above the allowance cannot exceed actual capacity and never cause an 
   f.config.providerFeeAllowanceBps = 250;
   await syncEcofyFinance(f.db, f.config);
   f.state.quotePatch = { fee: 200, total: 18700 };
-  await assert.rejects(f.quote({ amount: 18500 }), /withdrawal fee exceeds/);
+  await assert.rejects(f.quote({ amount: 18500 }), (error) => {
+    assert.match(error.message, /withdrawal fee exceeds/);
+    assert.deepEqual(error.payoutAdjustment, {
+      quoted_fee: 200,
+      allowance_applied: 100,
+      suggested_amount: 18400,
+      minimum: 1000,
+    });
+    return true;
+  });
   assert.equal(
     f.state.calls.filter((r) => r.path === '/v1/payouts' && r.method === 'POST').length,
     0,
@@ -684,6 +693,22 @@ test('payout API protects tenant boundaries, CSRF and OTP secrecy and rejects do
       .status,
     403,
   );
+  f.config.providerFeeAllowanceBps = 250;
+  f.state.quotePatch = { fee: 200, total: 18700 };
+  const adjustment = await request(
+    '/organizer/payouts/quote',
+    f.quoteInput({ amount: 18500 }),
+    owner,
+  );
+  assert.equal(adjustment.status, 409);
+  assert.deepEqual(adjustment.data.payout_adjustment, {
+    quoted_fee: 200,
+    allowance_applied: 100,
+    suggested_amount: 18400,
+    minimum: 1000,
+  });
+  f.config.providerFeeAllowanceBps = 0;
+  f.state.quotePatch = {};
   const q = await request('/organizer/payouts/quote', f.quoteInput(), owner);
   assert.equal(
     (

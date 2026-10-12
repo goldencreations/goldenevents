@@ -124,6 +124,96 @@ test('fee allowance and quote coverage remain clear on desktop and mobile withou
   await page.screenshot({ path: 'test-results/fee-allowance-quote-desktop.png', fullPage: true });
 });
 
+test('an unaffordable fee offers a safe revised amount and requires a new quote without silently sending money', async ({
+  page,
+}) => {
+  await page.goto('/register');
+  const password = 'AdjustmentTest123!';
+  await page.request.post('/api/auth/register', {
+    headers: { Origin: 'http://localhost:5181' },
+    data: { name: 'Adjustment Organizer', email: `adjustment-${Date.now()}@example.com`, password },
+  });
+  await page.route('**/api/organizer/finance', async (route) => {
+    const data = await (await route.fetch()).json();
+    await route.fulfill({
+      json: {
+        ...data,
+        demo: false,
+        automatic_disbursement: true,
+        available: 1850,
+        withdrawal_capacity: 1860,
+        provider_fee_reserve: 10,
+        provider_fee_allowance_bps: 250,
+      },
+    });
+  });
+  const requests = [];
+  await page.route('**/api/organizer/payouts/quote', (route) => {
+    const body = route.request().postDataJSON();
+    requests.push(body);
+    if (requests.length === 1)
+      return route.fulfill({
+        status: 409,
+        json: {
+          error:
+            'Ecofy quoted a TZS 46 withdrawal fee. The amount plus withdrawal fee exceeds your earnings. You can try TZS 1814; the fee will be quoted again before payout.',
+          payout_adjustment: {
+            quoted_fee: 46,
+            allowance_applied: 10,
+            suggested_amount: 1814,
+            minimum: 1000,
+          },
+        },
+      });
+    return route.fulfill({
+      json: {
+        quote: {
+          id: 'revised-quote',
+          amount: 1814,
+          fee: 45,
+          total: 1859,
+          account_name: 'Adjustment Organizer',
+          account_name_source: 'merchant',
+          account_last4: '5678',
+          channel: 'MPESA',
+          expires_at: Date.now() + 300000,
+          destination_verification_required: false,
+          demo: false,
+        },
+      },
+    });
+  });
+  await page.route('**/api/organizer/payouts/code', (route) =>
+    route.fulfill({
+      json: {
+        challenge_id: 'revised-challenge',
+        verification_phone: '+255 *** *** 5678',
+        expires_at: Date.now() + 300000,
+        mode: 'nextsms',
+      },
+    }),
+  );
+  await page.goto('/dashboard/revenue');
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.getByRole('button', { name: 'Request payout', exact: true }).click();
+  await page.getByLabel('Amount to recipient (TZS)').fill('1850');
+  await page.getByLabel('Mobile-money number').fill('0712345678');
+  await page.getByLabel('Your account password').fill(password);
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(page.getByRole('dialog')).toContainText('Withdrawal fee: TZS 46');
+  await expect(page.getByRole('dialog')).toContainText('Covered by allowance: TZS 10');
+  await page.screenshot({ path: 'test-results/payout-fee-adjustment-mobile.png' });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.getByRole('button', { name: 'Use TZS 1,814' }).click();
+  await expect(page.getByLabel('Amount to recipient (TZS)')).toHaveValue('1814');
+  expect(requests.length).toBe(1);
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Confirm your payout' })).toBeVisible();
+  expect(requests[1].amount).toBe(1814);
+  expect(requests[1].idempotency_key).not.toBe(requests[0].idempotency_key);
+  await expect(page.locator('.payout-confirmation')).toContainText('1,859');
+});
+
 test('withdrawal proceeds directly to fresh OTP with entered recipient, fees and final confirmation on desktop/mobile', async ({
   page,
 }) => {

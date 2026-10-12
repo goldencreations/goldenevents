@@ -522,6 +522,11 @@ function ProviderPayoutForm({
     [code, setCode] = useState(''),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(''),
+    [feeAdjustment, setFeeAdjustment] = useState<{
+      quoted_fee: number;
+      allowance_applied: number;
+      suggested_amount: number;
+    } | null>(null),
     [now, setNow] = useState(Date.now());
   const quoteKey = useRef(crypto.randomUUID()),
     otpKey = useRef(crypto.randomUUID());
@@ -538,6 +543,7 @@ function ProviderPayoutForm({
     setCode('');
     setPassword('');
     setError('');
+    setFeeAdjustment(null);
     quoteKey.current = crypto.randomUUID();
     otpKey.current = crypto.randomUUID();
   };
@@ -570,6 +576,7 @@ function ProviderPayoutForm({
     e.preventDefault();
     setBusy(true);
     setError('');
+    setFeeAdjustment(null);
     try {
       if (challenge) {
         const result = await send<{ payout: Payout }>(
@@ -603,6 +610,25 @@ function ProviderPayoutForm({
         await sendVerification(response.quote);
       }
     } catch (e) {
+      if (e instanceof ApiError && !quote) {
+        const adjustment = e.data.payout_adjustment as Record<string, unknown> | undefined;
+        if (
+          adjustment &&
+          ['quoted_fee', 'allowance_applied', 'suggested_amount'].every(
+            (k) =>
+              typeof adjustment[k] === 'number' &&
+              Number.isSafeInteger(adjustment[k]) &&
+              (adjustment[k] as number) >= 0,
+          )
+        )
+          setFeeAdjustment(
+            adjustment as {
+              quoted_fee: number;
+              allowance_applied: number;
+              suggested_amount: number;
+            },
+          );
+      }
       if (!challenge && e instanceof ApiError && [400, 401, 409, 422, 503].includes(e.status)) {
         if (!quote) quoteKey.current = crypto.randomUUID();
         else otpKey.current = crypto.randomUUID();
@@ -629,6 +655,30 @@ function ProviderPayoutForm({
     >
       <form className="payout-form provider-payout-form" onSubmit={submit}>
         {error && <ErrorBox>{error}</ErrorBox>}
+        {feeAdjustment && !quote && (
+          <div className="finance-note finance-fee-adjustment" role="status">
+            <span>
+              Withdrawal fee: TZS {money(feeAdjustment.quoted_fee)}. Covered by allowance: TZS{' '}
+              {money(feeAdjustment.allowance_applied)}.
+            </span>
+            {feeAdjustment.suggested_amount >= finance.minimum &&
+              feeAdjustment.suggested_amount <= finance.available && (
+                <button
+                  type="button"
+                  className="button secondary"
+                  disabled={busy}
+                  onClick={() => {
+                    setAmount(String(feeAdjustment.suggested_amount));
+                    quoteKey.current = crypto.randomUUID();
+                    setFeeAdjustment(null);
+                    setError('');
+                  }}
+                >
+                  Use TZS {money(feeAdjustment.suggested_amount)}
+                </button>
+              )}
+          </div>
+        )}
         {quote ? (
           <>
             <div className="payout-verified-name">
@@ -762,8 +812,9 @@ function ProviderPayoutForm({
         ) : (
           <>
             <p className="finance-note">
-              Available earnings: TZS {money(finance.available)}. The withdrawal fee is quoted
-              separately and deducted from these earnings.
+              Available before the final withdrawal fee: TZS {money(finance.available)}. Unused fee
+              allowance: TZS {money(finance.provider_fee_reserve)}. The actual quote determines the
+              amount you can receive.
             </p>
             <label>
               Amount to recipient (TZS)
