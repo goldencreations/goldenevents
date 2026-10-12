@@ -155,6 +155,8 @@ export type Finance = {
   gross: number;
   platform_fee: number;
   provider_fees: number;
+  provider_fee_allowance_bps: number;
+  provider_fee_reserve: number;
   provider_fees_pending: number;
   net_estimate: number;
   held: number;
@@ -162,6 +164,7 @@ export type Finance = {
   reserved: number;
   paid_out: number;
   available: number;
+  withdrawal_capacity: number;
   shortfall: number;
   refunded: number;
   legacy_orders: number;

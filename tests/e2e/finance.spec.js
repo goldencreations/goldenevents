@@ -1,5 +1,86 @@
 import { test, expect } from '@playwright/test';
 
+test('fee allowance and quote coverage remain clear on desktop and mobile without double subtraction', async ({
+  page,
+}) => {
+  await page.goto('/register');
+  const password = 'AllowanceTest123!';
+  const account = await page.request.post('/api/auth/register', {
+    headers: { Origin: 'http://localhost:5181' },
+    data: { name: 'Allowance Organizer', email: `allowance-${Date.now()}@example.com`, password },
+  });
+  expect(account.status()).toBe(200);
+  await page.route('**/api/organizer/finance', async (route) => {
+    const response = await route.fetch();
+    const data = await response.json();
+    await route.fulfill({
+      json: {
+        ...data,
+        demo: false,
+        automatic_disbursement: true,
+        payout_mode: 'ecofy',
+        gross: 2000,
+        platform_fee: 100,
+        provider_fees: 40,
+        provider_fees_pending: 0,
+        net_estimate: 1860,
+        released: 1860,
+        available: 1850,
+        withdrawal_capacity: 1860,
+        provider_fee_allowance_bps: 250,
+        provider_fee_reserve: 10,
+      },
+    });
+  });
+  await page.route('**/api/organizer/payouts/quote', (route) =>
+    route.fulfill({
+      json: {
+        quote: {
+          id: 'allowance-quote',
+          amount: 1850,
+          fee: 10,
+          total: 1860,
+          account_name: 'TEST RECIPIENT',
+          account_last4: '5678',
+          channel: 'MPESA',
+          expires_at: Date.now() + 300000,
+          demo: false,
+        },
+      },
+    }),
+  );
+  await page.goto('/dashboard/revenue');
+  await expect(page.locator('.finance-available')).toContainText('1,850');
+  await expect(page.locator('.finance-balances')).toContainText(
+    'Remaining provider-fee allowance (2.5%)',
+  );
+  await page.screenshot({ path: 'test-results/fee-allowance-desktop.png', fullPage: true });
+  await page.setViewportSize({ width: 375, height: 812 });
+  await expect
+    .poll(() => page.locator('.sidebar').evaluate((el) => el.getBoundingClientRect().right))
+    .toBeLessThanOrEqual(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: 'test-results/fee-allowance-mobile.png', fullPage: true });
+  await page.getByRole('button', { name: 'Request payout', exact: true }).click();
+  await page.getByLabel('Amount to recipient (TZS)').fill('1850');
+  await page.getByLabel('Mobile-money number').fill('0712345678');
+  await page.getByLabel('Your account password').fill(password);
+  await page.getByRole('button', { name: 'Check recipient & fee' }).click();
+  await expect(page.getByText('TEST RECIPIENT', { exact: true })).toBeVisible();
+  await expect(
+    page.locator('.payout-confirmation > div').filter({ hasText: 'Remaining earnings' }),
+  ).toContainText('TZS 0');
+  await expect(
+    page
+      .locator('.payout-confirmation > div')
+      .filter({ hasText: 'Withdrawal fee covered by allowance' }),
+  ).toContainText('TZS 10');
+  await page.screenshot({ path: 'test-results/fee-allowance-quote-mobile.png', fullPage: true });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.screenshot({ path: 'test-results/fee-allowance-quote-desktop.png', fullPage: true });
+});
+
 test('quoted demo payout shows verified name, separate fees, OTP and final outcome on desktop/mobile', async ({
   page,
 }) => {

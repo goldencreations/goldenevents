@@ -8,6 +8,7 @@ import { scannerEmailAvailable } from './scanner-mail.js';
 import { smsAvailable } from './sms.js';
 import { issueOtp, consumeOtp, verifiedPhone, otpReceiptProof, maskOtpPhone } from './otp.js';
 import { ecofyRequest, verifyEcofy } from './ecofy.js';
+import { platformFee } from './fees.js';
 import {
   ecofyBalance,
   ecofyQuote,
@@ -73,10 +74,8 @@ export function organizerFinance(db, config, user) {
   const gross = sum(paid, 'amount'),
     fee = sum(paid, 'platform_fee');
   const providerFees = sum(paid, 'provider_fee');
-  const released = sum(
-    paid.filter((o) => o.settled_at && o.event_status !== 'cancelled'),
-    'settled_net',
-  );
+  const releasedOrders = paid.filter((o) => o.settled_at && o.event_status !== 'cancelled');
+  const released = sum(releasedOrders, 'settled_net');
   const reserved =
     sum(
       payouts.filter((p) => ['requested', 'processing'].includes(p.status)),
@@ -96,6 +95,20 @@ export function organizerFinance(db, config, user) {
       'payout_fee',
     );
   const remaining = released - reserved - paidOut;
+  const allowanceBps = config.payoutDriver === 'ecofy' ? config.providerFeeAllowanceBps : 0;
+  const allowance = releasedOrders.reduce(
+    (total, o) => total + platformFee(o.amount, allowanceBps),
+    0,
+  );
+  const withdrawalFees = sum(
+    payouts.filter((p) => ['requested', 'processing', 'paid'].includes(p.status)),
+    'payout_fee',
+  );
+  // Actual collection and committed withdrawal fees consume one shared allowance.
+  const feeReserve = Math.min(
+    Math.max(0, remaining),
+    Math.max(0, allowance - sum(releasedOrders, 'provider_fee') - withdrawalFees),
+  );
   return {
     currency: 'TZS',
     fee_bps: config.platformFeeBps,
@@ -116,13 +129,16 @@ export function organizerFinance(db, config, user) {
     gross,
     platform_fee: fee,
     provider_fees: providerFees,
+    provider_fee_allowance_bps: allowanceBps,
+    provider_fee_reserve: feeReserve,
     provider_fees_pending: paid.filter((o) => o.provider_fee === null).length,
     net_estimate: gross - fee - providerFees,
     held: gross - fee - providerFees - released,
     released,
     reserved,
     paid_out: paidOut,
-    available: Math.max(0, remaining),
+    available: Math.max(0, remaining - feeReserve),
+    withdrawal_capacity: Math.max(0, remaining),
     shortfall: Math.max(0, -remaining),
     refunded: sum(
       rows.filter((o) => o.status === 'refunded'),
@@ -139,6 +155,9 @@ export function organizerFinance(db, config, user) {
     })),
     payouts: payouts.map(publicPayout),
   };
+}
+function canCoverPayout(finance, amount, fee = 0) {
+  return amount <= finance.available && amount + fee <= finance.withdrawal_capacity;
 }
 export function adminFinance(db, config, user) {
   administrator(user);
@@ -365,8 +384,11 @@ export async function requestPayoutCode(db, config, user, input, ip) {
           )
             throw new HttpError(409, 'Account verification changed. Start again.');
           if (
-            parsed.data.amount + (quote?.fee || 0) >
-            organizerFinance(db, config, current).available
+            !canCoverPayout(
+              organizerFinance(db, config, current),
+              parsed.data.amount,
+              quote?.fee || 0,
+            )
           )
             throw new HttpError(409, 'The amount exceeds your available balance.');
           const duplicate = db
@@ -448,7 +470,7 @@ export async function requestPayoutCode(db, config, user, input, ip) {
     )
       throw new HttpError(429, 'Too many verification requests. Wait before trying again.');
     if (quote) ownedQuote(db, config, user, quote.id);
-    if (parsed.data.amount + (quote?.fee || 0) > organizerFinance(db, config, current).available)
+    if (!canCoverPayout(organizerFinance(db, config, current), parsed.data.amount, quote?.fee || 0))
       throw new HttpError(409, 'The amount exceeds your available balance.');
     db.prepare(
       "UPDATE payout_challenges SET status='superseded' WHERE user_id=? AND status IN ('ready','sending')",
@@ -559,7 +581,7 @@ export function confirmPayout(db, config, user, challengeId, input) {
       throw new HttpError(409, 'Payout configuration changed. Start again.');
     if (
       c.amount < config.payoutMinimum ||
-      c.amount + c.payout_fee > organizerFinance(db, config, account).available
+      !canCoverPayout(organizerFinance(db, config, account), c.amount, c.payout_fee)
     )
       throw new HttpError(409, 'Your available balance changed. Refresh and start again.');
     const id = randomUUID(),
@@ -838,7 +860,7 @@ export async function requestPayoutQuote(db, config, user, input) {
         : await ecofyQuote(config, q);
     if (remote.expires_at <= Date.now())
       throw new HttpError(409, 'This quote expired. Start again.');
-    if (remote.total > organizerFinance(db, config, current).available)
+    if (!canCoverPayout(organizerFinance(db, config, current), remote.amount, remote.fee))
       throw new HttpError(
         409,
         'The amount plus withdrawal fee exceeds your earnings. Choose a smaller amount.',

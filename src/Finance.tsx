@@ -277,6 +277,12 @@ export function OrganizerEarnings() {
         </button>
       </div>
       <dl className="finance-balances">
+        {data.provider_fee_allowance_bps > 0 && (
+          <div>
+            <dt>Remaining provider-fee allowance ({data.provider_fee_allowance_bps / 100}%)</dt>
+            <dd>TZS {money(data.provider_fee_reserve)}</dd>
+          </div>
+        )}
         <div>
           <dt>Held / awaiting reconciliation</dt>
           <dd>TZS {money(data.held)}</dd>
@@ -610,8 +616,24 @@ function ProviderPayoutForm({
               </div>
               <div>
                 <dt>Remaining earnings</dt>
-                <dd>TZS {money(finance.available - quote.total)}</dd>
+                <dd>
+                  TZS{' '}
+                  {money(
+                    Math.max(
+                      0,
+                      finance.withdrawal_capacity -
+                        quote.total -
+                        Math.max(0, finance.provider_fee_reserve - quote.fee),
+                    ),
+                  )}
+                </dd>
               </div>
+              {finance.provider_fee_reserve > 0 && (
+                <div>
+                  <dt>Withdrawal fee covered by allowance</dt>
+                  <dd>TZS {money(Math.min(finance.provider_fee_reserve, quote.fee))}</dd>
+                </div>
+              )}
             </dl>
             {challenge ? (
               <>

@@ -290,6 +290,87 @@ test('a quote verifies destination and fee, requires recognized-name consent, an
   await assert.rejects(f.code(q), /already been used/);
   assert.ok(f.state.calls.some((r) => r.path === '/v1/payouts/po_1' && r.method === 'GET'));
 });
+
+test('a combined fee allowance holds only its unused portion and funds a full-balance withdrawal without double deduction', async (t) => {
+  const f = fixture(t);
+  f.config.providerFeeAllowanceBps = 250;
+  f.state.matured = false;
+  await syncEcofyFinance(f.db, f.config);
+  let balance = organizerFinance(f.db, f.config, f.user);
+  assert.equal(balance.provider_fee_reserve, 0);
+  assert.equal(balance.available, 0);
+  f.state.matured = true;
+  f.db.prepare('UPDATE ecofy_wallet SET checked_at=0').run();
+  await syncEcofyFinance(f.db, f.config);
+  balance = organizerFinance(f.db, f.config, f.user);
+  assert.equal(balance.provider_fees, 400);
+  assert.equal(balance.provider_fee_reserve, 100);
+  assert.equal(balance.withdrawal_capacity, 18600);
+  assert.equal(balance.available, 18500);
+  const quote = await f.quote({ amount: 18500 });
+  const challenge = await f.code(quote);
+  const payout = await f.submit(challenge);
+  assert.equal(payout.status, 'paid');
+  balance = organizerFinance(f.db, f.config, f.user);
+  assert.equal(balance.paid_out, 18600);
+  assert.equal(balance.provider_fee_reserve, 0);
+  assert.equal(balance.available, 0);
+  assert.equal(balance.shortfall, 0);
+});
+
+test('fees above the allowance cannot exceed actual capacity and never cause an unsupported transfer', async (t) => {
+  const f = fixture(t);
+  f.config.providerFeeAllowanceBps = 250;
+  await syncEcofyFinance(f.db, f.config);
+  f.state.quotePatch = { fee: 200, total: 18700 };
+  await assert.rejects(f.quote({ amount: 18500 }), /withdrawal fee exceeds/);
+  assert.equal(
+    f.state.calls.filter((r) => r.path === '/v1/payouts' && r.method === 'POST').length,
+    0,
+  );
+  f.state.quotePatch = { fee: 200, total: 18600 };
+  const quote = await f.quote({ amount: 18400 });
+  const payout = await f.submit(await f.code(quote));
+  assert.equal(payout.status, 'paid');
+  assert.equal(organizerFinance(f.db, f.config, f.user).available, 0);
+});
+
+test('partial withdrawal fees consume the allowance once and unused reserves remain available for subsequent fees', async (t) => {
+  const f = fixture(t);
+  f.config.providerFeeAllowanceBps = 250;
+  await syncEcofyFinance(f.db, f.config);
+  f.state.quotePatch = { fee: 50, total: 10050 };
+  const quote = await f.quote({ amount: 10000 });
+  await f.submit(await f.code(quote));
+  const balance = organizerFinance(f.db, f.config, f.user);
+  assert.equal(balance.withdrawal_capacity, 8550);
+  assert.equal(balance.provider_fee_reserve, 50);
+  assert.equal(balance.available, 8500);
+});
+
+test('pending fees consume the allowance, confirmed failures restore it, and cancelled sales cannot create a reserve', async (t) => {
+  const f = fixture(t);
+  f.config.providerFeeAllowanceBps = 250;
+  await syncEcofyFinance(f.db, f.config);
+  f.state.status = 'processing';
+  const quote = await f.quote({ amount: 10000 });
+  const payout = await f.submit(await f.code(quote));
+  assert.equal(payout.status, 'processing');
+  let balance = organizerFinance(f.db, f.config, f.user);
+  assert.equal(balance.reserved, 10100);
+  assert.equal(balance.provider_fee_reserve, 0);
+  assert.equal(balance.available, 8500);
+  f.state.status = 'failed';
+  await f.retry();
+  balance = organizerFinance(f.db, f.config, f.user);
+  assert.equal(balance.reserved, 0);
+  assert.equal(balance.provider_fee_reserve, 100);
+  assert.equal(balance.available, 18500);
+  f.db.prepare("UPDATE events SET status='cancelled' WHERE id=?").run(f.event.id);
+  balance = organizerFinance(f.db, f.config, f.user);
+  assert.equal(balance.provider_fee_reserve, 0);
+  assert.equal(balance.available, 0);
+});
 test('bank quoting preserves leading zeros, uses documented channels, and rejects invalid type/channel pairs', async (t) => {
   const f = fixture(t);
   await syncEcofyFinance(f.db, f.config);
@@ -453,6 +534,11 @@ test('definite initial rejection releases funds, but a rejection after a lost re
   assert.equal(organizerFinance(f.db, f.config, f.user).reserved, 10100);
 });
 test('automatic configuration cannot enable simulated money in production or mix collection providers', () => {
+  for (const invalid of [-1, 10001, 2.5, NaN])
+    assert.throws(
+      () => makeConfig({ providerFeeAllowanceBps: invalid }),
+      /PROVIDER_FEE_ALLOWANCE_BPS/,
+    );
   assert.throws(() => makeConfig({ production: true, payoutDriver: 'demo' }), /Demo payouts/);
   assert.throws(
     () => makeConfig({ paymentDriver: 'disabled', payoutDriver: 'ecofy' }),

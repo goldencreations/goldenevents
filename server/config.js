@@ -32,6 +32,7 @@ export function makeConfig(overrides = {}) {
     otpVerificationTtlMinutes: Number(process.env.OTP_VERIFICATION_TTL_MINUTES || 15),
     platformFeeBps:
       process.env.PLATFORM_FEE_BPS === undefined ? 500 : Number(process.env.PLATFORM_FEE_BPS),
+    providerFeeAllowanceBps: Number(process.env.PROVIDER_FEE_ALLOWANCE_BPS || 0),
     payoutMinimum:
       process.env.PAYOUT_MINIMUM_TZS === undefined ? 1000 : Number(process.env.PAYOUT_MINIMUM_TZS),
     apiRateLimit: process.env.NODE_ENV === 'test' ? 1200 : 240,
@@ -102,6 +103,12 @@ export function makeConfig(overrides = {}) {
     throw new Error('PLATFORM_FEE_BPS must be an integer between 0 and 10000.');
   if (!Number.isSafeInteger(config.payoutMinimum) || config.payoutMinimum < 1)
     throw new Error('PAYOUT_MINIMUM_TZS must be a positive whole-shilling amount.');
+  if (
+    !Number.isInteger(config.providerFeeAllowanceBps) ||
+    config.providerFeeAllowanceBps < 0 ||
+    config.providerFeeAllowanceBps > 10000
+  )
+    throw new Error('PROVIDER_FEE_ALLOWANCE_BPS must be an integer between 0 and 10000.');
   if (config.production && (config.paymentDriver === 'demo' || config.seedDemo))
     throw new Error('Demo payments and demo seeding are not allowed in production.');
   if (

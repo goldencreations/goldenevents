@@ -288,6 +288,17 @@ actions are audited. Refunds of released demo sales are blocked pending reconcil
 
 ### Ecofy withdrawals
 
+`PROVIDER_FEE_ALLOWANCE_BPS=250` reserves a conservative 2.5% of matured ticket
+sales for collection and withdrawal fees combined, separately from the platform
+fee. This is an allowance, not a claimed provider tariff or platform revenue.
+Verified collection fees and pending/paid withdrawal fees consume the allowance;
+the same fee is never deducted both as an allowance and as an actual cost.
+Only the remaining allowance reduces the amount available to request. A payout's
+principal must fit that amount, and principal plus the authoritative quoted fee
+must fit actual unreserved funds. Higher provider fees require a smaller payout.
+Rejected withdrawals restore the unused allowance. The default is zero unless
+explicitly configured; manual reconciliation and local demo behavior are unchanged.
+
 `PAYOUT_DRIVER=ecofy` explicitly enables real transfers using the existing server-only
 Ecofy credentials. Production templates default to `manual`; local demo payments
 default to `demo`, which simulates a TZS 100 withdrawal fee and a recipient name,
