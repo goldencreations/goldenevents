@@ -14,6 +14,7 @@ import {
   verifyEcofy,
   verifyEcofySignature,
   processEcofyPayments,
+  ecofyRequest,
 } from '../server/ecofy.js';
 
 function fixture(t, capacity = 10) {
@@ -84,6 +85,27 @@ const payment = (order, patch = {}) => ({
 });
 const signature = (secret, body, timestamp = Math.floor(Date.now() / 1000)) =>
   `t=${timestamp},v1=${createHmac('sha256', secret).update(`${timestamp}.`).update(body).digest('hex')}`;
+
+test('Ecofy requests prefer JSON and HTML responses never leak bodies or prove a transfer failed', async (t) => {
+  const { config } = fixture(t);
+  for (const status of [200, 400, 502, 503]) {
+    globalThis.fetch = async (_url, options) => {
+      assert.equal(options.headers.Accept, 'application/json');
+      return new Response('<!DOCTYPE html><html>private provider diagnostic</html>', {
+        status,
+        headers: { 'Content-Type': 'text/html' },
+      });
+    };
+    await assert.rejects(ecofyRequest(config, '/v1/payouts/quote'), (error) => {
+      assert.equal(error.code, 'invalid_response');
+      assert.equal(error.httpStatus, status);
+      assert.equal(error.definitive, false);
+      assert.equal(error.message.includes('private provider diagnostic'), false);
+      assert.equal(error.message.includes('Unexpected token'), false);
+      return true;
+    });
+  }
+});
 
 test('Ecofy phone-only checkout uses whole TZS, durable idempotency, and provider deadline', async (t) => {
   const { db, config, order } = fixture(t);

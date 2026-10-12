@@ -1,5 +1,36 @@
 import { test, expect } from '@playwright/test';
 
+test('HTML gateway errors show a safe payout message and quote retries preserve their key', async ({
+  page,
+}) => {
+  await page.goto('/login');
+  await page.getByRole('button', { name: 'Open demo workspace' }).click();
+  const keys = [];
+  await page.route('**/api/organizer/payouts/quote', (route) => {
+    keys.push(route.request().postDataJSON().idempotency_key);
+    return route.fulfill({
+      status: 502,
+      contentType: 'text/html',
+      body: '<!DOCTYPE html><html>Private gateway error</html>',
+    });
+  });
+  await page.goto('/dashboard/revenue');
+  await page.getByRole('button', { name: 'Request payout', exact: true }).click();
+  await page.getByLabel('Amount to recipient (TZS)').fill('1000');
+  await page.getByLabel('Mobile-money number').fill('0712345678');
+  await page.getByLabel('Your account password').fill('GoldenDemo2026!');
+  const button = page.getByRole('button', { name: 'Check recipient & fee' });
+  await button.click();
+  await expect(page.getByRole('dialog')).toContainText(
+    'The withdrawal service is temporarily unavailable.',
+  );
+  await expect(page.getByRole('dialog')).not.toContainText('Unexpected token');
+  await expect(page.getByRole('dialog')).not.toContainText('Private gateway error');
+  await button.click();
+  await expect.poll(() => keys.length).toBe(2);
+  expect(keys[0]).toBe(keys[1]);
+});
+
 test('fee allowance and quote coverage remain clear on desktop and mobile without double subtraction', async ({
   page,
 }) => {

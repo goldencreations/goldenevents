@@ -886,8 +886,18 @@ export async function requestPayoutQuote(db, config, user, input) {
   } catch (error) {
     db.prepare(
       "UPDATE payout_quotes SET status=?,next_attempt=0 WHERE id=? AND status='quoting'",
-    ).run(error instanceof HttpError || error.definitive ? 'failed' : 'quoting', q.id);
+    ).run(
+      error instanceof HttpError || error.definitive || error.code === 'withdrawals_unavailable'
+        ? 'failed'
+        : 'quoting',
+      q.id,
+    );
     if (error instanceof HttpError) throw error;
+    if (error.code === 'withdrawals_unavailable')
+      throw new HttpError(
+        503,
+        'Ecofy is currently refusing automatic withdrawals. Contact support or try again later. No money was sent.',
+      );
     if (error.code === 'not_found')
       throw new HttpError(400, 'Ecofy could not find this account. Check the number and channel.');
     throw new HttpError(

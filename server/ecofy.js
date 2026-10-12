@@ -10,11 +10,21 @@ export async function ecofyRequest(config, pathname, options = {}) {
     signal: AbortSignal.timeout(15000),
     headers: {
       'Content-Type': 'application/json',
+      Accept: 'application/json',
       Authorization: `Bearer ${config.ecofyApiKey}`,
       ...options.headers,
     },
   });
-  const data = await response.json();
+  let data;
+  try {
+    data = await response.json();
+  } catch {
+    const error = new Error('Ecofy returned an unreadable response.');
+    error.code = 'invalid_response';
+    error.httpStatus = response.status;
+    error.definitive = false;
+    throw error;
+  }
   if (!response.ok) {
     const error = new Error('Ecofy request could not be completed.');
     error.code = typeof data?.error?.code === 'string' ? data.error.code : 'unknown';

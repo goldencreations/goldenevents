@@ -10,10 +10,21 @@ export class ApiError extends Error {
 
 export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers);
+  headers.set('Accept', 'application/json');
   if (options.body && !(options.body instanceof FormData))
     headers.set('Content-Type', 'application/json');
   const response = await fetch(`/api${path}`, { ...options, headers, credentials: 'same-origin' });
-  const data = await response.json();
+  let data;
+  try {
+    data = await response.json();
+  } catch {
+    throw new ApiError(502, {
+      error: path.startsWith('/organizer/payouts')
+        ? 'The withdrawal service is temporarily unavailable. Check payout history before trying again.'
+        : 'The service is temporarily unavailable. Please try again shortly.',
+      response_status: response.status,
+    });
+  }
   if (!response.ok) throw new ApiError(response.status, data);
   return data;
 }

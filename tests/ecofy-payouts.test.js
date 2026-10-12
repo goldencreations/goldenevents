@@ -384,6 +384,49 @@ test('bank quoting preserves leading zeros, uses documented channels, and reject
     /matching bank/,
   );
 });
+
+test('withdrawals-unavailable quote exposes a clear provider block without an OTP, reservation or transfer', async (t) => {
+  const f = fixture(t);
+  await syncEcofyFinance(f.db, f.config);
+  const providerFetch = globalThis.fetch;
+  globalThis.fetch = async (url, options) =>
+    new URL(url).pathname === '/v1/payouts/quote'
+      ? new Response(JSON.stringify({ error: { code: 'withdrawals_unavailable' } }), {
+          status: 503,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      : providerFetch(url, options);
+  await assert.rejects(f.quote(), (error) => {
+    assert.equal(error.status, 503);
+    assert.match(error.message, /Ecofy is currently refusing automatic withdrawals/);
+    return true;
+  });
+  assert.equal(f.db.prepare('SELECT status FROM payout_quotes').get().status, 'failed');
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM payout_challenges').get().n, 0);
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM payout_requests').get().n, 0);
+  assert.equal(organizerFinance(f.db, f.config, f.user).reserved, 0);
+  assert.equal(f.state.sentCode, '');
+});
+
+test('unreadable quote responses preserve the original key for recovery and never reserve funds', async (t) => {
+  const f = fixture(t);
+  await syncEcofyFinance(f.db, f.config);
+  const providerFetch = globalThis.fetch;
+  const keys = [];
+  globalThis.fetch = async (url, options) => {
+    if (new URL(url).pathname !== '/v1/payouts/quote') return providerFetch(url, options);
+    keys.push(options.headers['Idempotency-Key']);
+    return new Response('<!DOCTYPE html><html>upstream failed</html>', { status: 502 });
+  };
+  const input = f.quoteInput();
+  for (let i = 0; i < 2; i++)
+    await assert.rejects(requestPayoutQuote(f.db, f.config, f.user, input), /No money was sent/);
+  assert.equal(keys.length, 2);
+  assert.equal(keys[0], keys[1]);
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM payout_quotes').get().n, 1);
+  assert.equal(f.db.prepare('SELECT status FROM payout_quotes').get().status, 'quoting');
+  assert.equal(organizerFinance(f.db, f.config, f.user).reserved, 0);
+});
 test('quote retries are durable and idempotent; changed details and expired quotes cannot send money', async (t) => {
   const f = fixture(t);
   await syncEcofyFinance(f.db, f.config);
