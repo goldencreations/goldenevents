@@ -19,6 +19,7 @@ test('NextSMS installer activates only with explicit flag, preserves production 
     merged = parseEnv(readFileSync(target, 'utf8'));
   assert.equal(merged.NEXTSMS_ENABLED, 'true');
   assert.equal(merged.PAYOUT_OTP_DRIVER, 'nextsms');
+  assert.equal(merged.NEXTSMS_API_VERSION, '1');
   assert.equal(merged.NEXTSMS_PASSWORD, 'fixture-p@ss#word');
   assert.equal(merged.NEXTSMS_USERNAME, 'dedicated-fixture');
   assert.equal(merged.PAYMENT_DRIVER, 'ecofy');

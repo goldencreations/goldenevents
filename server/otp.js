@@ -76,7 +76,7 @@ export async function issueOtp(db, config, context, options = {}) {
   const body = `Golden Events: ${label} code ${code}. Expires in ${minutes} min. Do not share this code.`;
   try {
     const accepted = await smsGateway(config).send(phone, body, id);
-    if (!accepted?.messageId || !['accepted', 'delivered'].includes(accepted.status))
+    if (!accepted || !['accepted', 'delivered'].includes(accepted.status))
       throw new Error('No SMS acceptance');
     transaction(db, () => {
       const sent = db
@@ -84,15 +84,27 @@ export async function issueOtp(db, config, context, options = {}) {
           `UPDATE otp_challenges SET status='sent',provider_message_id=?,sent_at=?,latency_ms=?
         WHERE id=? AND status='pending' AND expires_at>?`,
         )
-        .run(String(accepted.messageId), Date.now(), Date.now() - now, id, Date.now());
+        .run(
+          accepted.messageId ? String(accepted.messageId) : null,
+          Date.now(),
+          Date.now() - now,
+          id,
+          Date.now(),
+        );
       if (!sent.changes)
         throw new HttpError(409, 'This code was replaced or expired. Request a new code.');
       options.afterSent?.(row);
     });
   } catch (error) {
+    const failureCode =
+      /^(http_\d{3}|provider_\d{1,2}_\d{1,4}|invalid_response|invalid_json|transport_error|timeout)$/.test(
+        error?.smsFailureCode || '',
+      )
+        ? error.smsFailureCode
+        : 'send_unconfirmed';
     db.prepare(
-      "UPDATE otp_challenges SET status='delivery_failed',code_hash=NULL,error_code='send_unconfirmed',latency_ms=? WHERE id=? AND status='pending'",
-    ).run(Date.now() - now, id);
+      "UPDATE otp_challenges SET status='delivery_failed',code_hash=NULL,error_code=?,latency_ms=? WHERE id=? AND status='pending'",
+    ).run(failureCode, Date.now() - now, id);
     options.afterFailed?.(row);
     if (error instanceof HttpError && error.status === 409) throw error;
     throw new HttpError(

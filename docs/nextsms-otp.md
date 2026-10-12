@@ -13,7 +13,7 @@ It does not add passwordless login, password reset or SMS delivery of purchased 
 ```dotenv
 NEXTSMS_ENABLED=true
 NEXTSMS_BASE_URL=https://messaging-service.co.tz
-NEXTSMS_API_VERSION=2
+NEXTSMS_API_VERSION=1
 NEXTSMS_USERNAME=YOUR_OWN_KEY
 NEXTSMS_PASSWORD=YOUR_OWN_SECRET
 NEXTSMS_SENDER_ID=YOUR_APPROVED_SENDER
@@ -22,7 +22,7 @@ PAYOUT_OTP_DRIVER=nextsms
 
 4. Restart the Node service after changing its environment. Keep credentials out of Git, shell history, screenshots and chat. The server validates HTTPS, sender format and bounded OTP settings; sender approval is a provider-side requirement.
 5. Verify an organizer's security phone in Settings with their current password and received SMS. Ordinary contact-number edits do not change this verified number. Replacing a verified number is deliberately blocked pending a secure recovery/change-number workflow; support cannot replace it through the current UI.
-6. Run an explicitly authorized staging smoke test on a dedicated number and save only a redacted provider response. Confirm reception on Vodacom, Airtel, Yas and Halotel before general release. This work has **not** performed a live SMS test or confirmed sender approval.
+6. Run an explicitly authorized staging smoke test on a dedicated number and save only a redacted provider response. Confirm reception on Vodacom, Airtel, Yas and Halotel before general release. A no-charge provider test is not evidence of handset delivery and must never authorize an account, payout or ticket claim.
 
 Both environment templates default to `NEXTSMS_ENABLED=false`. No credentials are bundled.
 NextSMS-disabled enrollment fails closed, not through a mock success or log-only send.
@@ -50,19 +50,35 @@ recreated/restarted to load the new environment; installing values alone does no
 
 ## Provider Contract
 
-The current [official Postman reference](https://documenter.getpostman.com/view/1679195/2sAYkDP1XN) documents
-`POST /api/sms/v2/text/single`, Basic/Bearer authentication and detailed message statuses.
-The [NextSMS product example](https://www.nextsms.co.tz/service/sms) still uses v1 and a simplified success response.
-This adapter uses the issued Basic credential pair, JSON `from`, canonical `255XXXXXXXXX` recipient, `text`,
-and an application challenge ID as v2 `reference`. Version 1 is explicitly configurable if needed.
-The reference is **not** assumed to be an idempotency key.
+The Developer API linked from this NextSMS account is the [v1 reference](https://documenter.getpostman.com/view/4680389/SW7dX7JL):
 
-HTTP 200 alone is not success. Accepted responses require a provider message ID and either explicit
-`success: true` or a documented v2 status: PENDING group 18 IDs 50/51/52/88, or DELIVERY group 20
-IDs 73/77/109. Failed, rejected, expired, undeliverable, malformed and unknown statuses fail closed.
-Legacy undocumented group 1 is not assumed successful. Numeric provider IDs are preserved without
-floating-point rounding. Transport timeouts, redirects and malformed responses are generic failures;
-upstream bodies and credentials are not exposed. No automatic retries are made after ambiguous SMS sends.
+- Live send: `POST /api/sms/v1/text/single`.
+- No-charge compatibility check: `POST /api/sms/v1/test/text/single` (dummy responses; never used by the OTP service).
+- Read-only balance/authentication check: `GET /api/sms/v1/balance`.
+- HTTP Basic authentication using `Base64(username:password)` and JSON request/response headers.
+- JSON `from`, canonical `255XXXXXXXXX` recipient, `text`, and optional application challenge ID as `reference`.
+
+Version 1 is the default in configuration, installation and environment templates. The same credentials
+were rejected by the v2 balance endpoint but accepted by v1; changing credentials was not necessary.
+V1 account authentication, available credits, and the documented no-charge endpoint were verified on
+2026-10-12 without printing secrets or message bodies. The no-charge response used status group 18/ID 51
+and a numeric message ID. A separate [v2 reference](https://documenter.getpostman.com/view/1679195/2sAYkDP1XN)
+exists; v2 remains explicitly selectable, but its availability must not be inferred from v1 account access.
+There is no automatic version fallback or retry, and `reference` is **not** assumed to be an idempotency key.
+
+HTTP 200 alone is not success. V1 acknowledgments must name the exact requested recipient and one of the
+documented immediate status pairs: group 18 IDs 50/51/52, group 20 IDs 73/77, or the v1 examples' group 1/ID 7
+`PENDING_ENROUTE` and group 3/ID 5 `DELIVERED_TO_HANDSET`. V1 examples may omit the message ID; it remains
+nullable in storage rather than inventing a provider ID. Group 1/ID 26 represents scheduled acceptance
+and is not accepted for immediate OTPs. V2 still requires an ID and supports its documented additional
+pending/sent states. Numeric status pairs are used because `groupName` varies between responses.
+The product page's simplified `success: true` shape still requires a message ID.
+
+Failed, rejected, expired, undeliverable, malformed and unknown statuses fail closed. Numeric provider IDs
+are preserved without floating-point rounding. Transport timeouts, redirects and malformed responses are
+generic failures. Only bounded diagnostic codes such as `http_401` or `provider_19_56` are stored;
+upstream message bodies, descriptions and credentials are never logged or exposed. No automatic retries
+are made after ambiguous SMS sends.
 An SMS may still arrive after a network timeout, but that code is invalidated: request a fresh one after cooldown.
 Provider acceptance means queued/sent, **not** proof that a handset received it.
 

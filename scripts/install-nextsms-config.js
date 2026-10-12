@@ -28,7 +28,7 @@ export function installNextSms(incoming, target, enable = false) {
   const settings = {
     NEXTSMS_ENABLED: enable ? 'true' : 'false',
     NEXTSMS_BASE_URL: supplied.NEXTSMS_BASE_URL || 'https://messaging-service.co.tz',
-    NEXTSMS_API_VERSION: supplied.NEXTSMS_API_VERSION || '2',
+    NEXTSMS_API_VERSION: supplied.NEXTSMS_API_VERSION || '1',
     NEXTSMS_USERNAME: supplied.NEXTSMS_USERNAME || '',
     NEXTSMS_PASSWORD: supplied.NEXTSMS_PASSWORD || '',
     NEXTSMS_SENDER_ID: supplied.NEXTSMS_SENDER_ID || '',

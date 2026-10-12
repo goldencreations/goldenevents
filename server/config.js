@@ -20,7 +20,7 @@ export function makeConfig(overrides = {}) {
     payoutOtpDriver: process.env.PAYOUT_OTP_DRIVER || 'auto',
     nextsmsEnabled: process.env.NEXTSMS_ENABLED === 'true',
     nextsmsBaseUrl: process.env.NEXTSMS_BASE_URL || 'https://messaging-service.co.tz',
-    nextsmsApiVersion: process.env.NEXTSMS_API_VERSION || '2',
+    nextsmsApiVersion: process.env.NEXTSMS_API_VERSION || '1',
     nextsmsUsername: process.env.NEXTSMS_USERNAME || '',
     nextsmsPassword: process.env.NEXTSMS_PASSWORD || '',
     nextsmsSenderId: process.env.NEXTSMS_SENDER_ID || '',

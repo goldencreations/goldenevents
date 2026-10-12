@@ -217,6 +217,7 @@ test('HTTP adapter uses documented Basic JSON endpoints, preserves large IDs, st
   });
   const config = makeConfig({
     nextsmsEnabled: true,
+    nextsmsApiVersion: '2',
     nextsmsUsername: 'own-key',
     nextsmsPassword: 'own-secret',
     nextsmsSenderId: 'GoldenEvnts',
@@ -238,7 +239,7 @@ test('HTTP adapter uses documented Basic JSON endpoints, preserves large IDs, st
   config.nextsmsApiVersion = '1';
   fetch.mock.mockImplementation(async (url, options) => {
     assert.ok(url.endsWith('/v1/text/single'));
-    assert.equal(JSON.parse(options.body).reference, undefined);
+    assert.equal(JSON.parse(options.body).reference, 'reference');
     return new Response('{"success":true,"message_id":"v1-id"}');
   });
   assert.equal(
@@ -249,7 +250,11 @@ test('HTTP adapter uses documented Basic JSON endpoints, preserves large IDs, st
     fetch.mock.mockImplementation(async () => new Response('secret echoed 482193', { status }));
     await assert.rejects(
       smsGateway(config).send('0748281701', 'fixture'),
-      (e) => e.status === 502 && !e.message.includes('secret') && !e.message.includes('482193'),
+      (e) =>
+        e.status === 502 &&
+        e.smsFailureCode === `http_${status}` &&
+        !e.message.includes('secret') &&
+        !e.message.includes('482193'),
     );
   }
   for (const body of ['not JSON', '{}', '{"success":false}', '{"success":true}']) {
@@ -267,6 +272,98 @@ test('HTTP adapter uses documented Basic JSON endpoints, preserves large IDs, st
     smsGateway({ ...config, nextsmsEnabled: false }).send('0748281701', 'fixture'),
     { status: 503 },
   );
+});
+test('account-linked v1 contract accepts only documented immediate status pairs, with an optional provider ID', () => {
+  const payload = (groupId, id, name, patch = {}) => ({
+    messages: [{ to: '255748281701', status: { groupId, id, name }, ...patch }],
+  });
+  assert.deepEqual(acceptedSms(payload(1, 7, 'PENDING_ENROUTE'), '255748281701', '1'), {
+    messageId: null,
+    status: 'accepted',
+  });
+  assert.deepEqual(acceptedSms(payload(3, 5, 'DELIVERED_TO_HANDSET'), '255748281701', '1'), {
+    messageId: null,
+    status: 'delivered',
+  });
+  for (const [group, id] of [
+    [18, 50],
+    [18, 51],
+    [18, 52],
+    [20, 73],
+    [20, 77],
+  ])
+    assert.ok(acceptedSms(payload(group, id, 'DOCUMENTED'), '255748281701', '1'));
+  for (const [group, id, name] of [
+    [1, 26, 'PENDING_ACCEPTED'],
+    [19, 57, 'REJECTED_NOT_ENOUGH_CREDITS'],
+    [20, 76, 'UNDELIVERABLE'],
+    [22, 58, 'FAILED_SENDER'],
+    [1, 999, 'PENDING_ENROUTE'],
+  ])
+    assert.equal(acceptedSms(payload(group, id, name), '255748281701', '1'), null);
+  assert.equal(acceptedSms(payload(1, 7, 'PENDING_ENROUTE'), '255748281701', '2'), null);
+  assert.equal(
+    acceptedSms(payload(18, 51, 'PENDING_ENROUTE', { to: '255712345678' }), '255748281701', '1'),
+    null,
+  );
+  assert.equal(
+    acceptedSms(payload(18, 51, 'PENDING_ENROUTE', { to: undefined }), '255748281701', '1'),
+    null,
+  );
+  assert.equal(
+    acceptedSms(payload(18, 51, 'PENDING_ENROUTE', { messageId: '' }), '255748281701', '1'),
+    null,
+  );
+  assert.equal(acceptedSms({ success: true }, '255748281701', '1'), null);
+});
+test('v1 is the default, sends the documented reference, and never calls the dummy endpoint for real verification', async (t) => {
+  const config = makeConfig({
+    nextsmsEnabled: true,
+    nextsmsUsername: 'fixture',
+    nextsmsPassword: 'fixture',
+    nextsmsSenderId: 'GoldenECARD',
+  });
+  assert.equal(config.nextsmsApiVersion, '1');
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    assert.equal(url, 'https://messaging-service.co.tz/api/sms/v1/text/single');
+    assert.deepEqual(JSON.parse(options.body), {
+      from: 'GoldenECARD',
+      to: '255748281701',
+      text: 'fixture',
+      reference: 'challenge-reference',
+    });
+    return new Response(
+      JSON.stringify({
+        messages: [{ to: '255748281701', status: { groupId: 1, id: 7, name: 'PENDING_ENROUTE' } }],
+      }),
+    );
+  });
+  assert.deepEqual(await smsGateway(config).send('0748281701', 'fixture', 'challenge-reference'), {
+    messageId: null,
+    status: 'accepted',
+  });
+});
+test('v1 without a provider ID still persists a usable purpose-bound OTP, and numeric failure diagnostics never include message bodies', async (t) => {
+  const f = fixture(t);
+  f.config.smsGateway = { send: async () => ({ messageId: null, status: 'accepted' }) };
+  const c = await issueOtp(f.db, f.config, f.context);
+  assert.equal(f.row(c.challenge_id).status, 'sent');
+  assert.equal(f.row(c.challenge_id).provider_message_id, null);
+  assert.ok(f.row(c.challenge_id).code_hash);
+  assert.equal(c.demo_code, undefined);
+  f.age(c.challenge_id);
+  f.config.smsGateway = {
+    send: async () => {
+      const e = new Error('body with secret code must never be saved');
+      e.smsFailureCode = 'provider_19_56';
+      throw e;
+    },
+  };
+  await assert.rejects(issueOtp(f.db, f.config, f.context), { status: 502 });
+  const failure = f.db.prepare("SELECT * FROM otp_challenges WHERE status='delivery_failed'").get();
+  assert.equal(failure.error_code, 'provider_19_56');
+  assert.equal(failure.code_hash, null);
+  assert.equal(JSON.stringify(failure).includes('secret code'), false);
 });
 test('OTP is random, salted, purpose/owner/context bound, single use, cleared atomically, and never returned', async (t) => {
   const f = fixture(t),
