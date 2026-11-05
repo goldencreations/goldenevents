@@ -9,6 +9,8 @@ import { renderTicketImage } from './ticket-image.js';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { mkdirSync, existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
+import { networkInterfaces } from 'node:os';
+import { readLivePublicEvents } from './live-public.js';
 import { z } from 'zod';
 import { hashPassword, verifyPassword, publicUser, tokenHash, safeEqual } from './auth.js';
 import {
@@ -72,6 +74,18 @@ import {
 } from './sharing.js';
 
 export function createApp(db, config, health = createHealthMonitor(db, config)) {
+  const developmentHosts = new Set(
+    config.production
+      ? []
+      : [
+          'localhost',
+          '127.0.0.1',
+          '[::1]',
+          ...Object.values(networkInterfaces()).flatMap((entries) =>
+            (entries || []).map((entry) => entry.address),
+          ),
+        ],
+  );
   const app = express();
   app.disable('x-powered-by');
   if (config.production) app.set('trust proxy', 1);
@@ -145,7 +159,7 @@ export function createApp(db, config, health = createHealthMonitor(db, config)) 
     const allowed =
       host === config.baseDomain ||
       host.endsWith(`.${config.baseDomain}`) ||
-      (!config.production && ['localhost', '127.0.0.1', '[::1]'].includes(host));
+      developmentHosts.has(host);
     if (!allowed) return res.status(400).json({ error: 'Unknown hostname.' });
     if (
       req.path.startsWith('/api/') &&
@@ -454,15 +468,33 @@ export function createApp(db, config, health = createHealthMonitor(db, config)) 
     });
     res.clearCookie('ge_session', { path: '/' }).json({ ok: true });
   });
-  app.get('/api/events', (_req, res) =>
+  app.get('/api/live-artwork/:filename', async (req, res) => {
+    if (!config.livePublicOrigin || !/^[a-zA-Z0-9_-]+\.(webp|png|jpe?g)$/.test(req.params.filename))
+      throw new HttpError(404, 'Picture not found.');
+    const response = await fetch(`${config.livePublicOrigin}/uploads/${req.params.filename}`, {
+      signal: AbortSignal.timeout(10000),
+      redirect: 'error',
+    });
+    if (!response.ok) throw new HttpError(502, 'Live picture is temporarily unavailable.');
+    const body = Buffer.from(await response.arrayBuffer());
+    if (body.length > 10 * 1024 * 1024) throw new HttpError(502, 'Picture is too large.');
+    res
+      .type(req.params.filename.split('.').pop())
+      .set('Cache-Control', 'public, max-age=300')
+      .send(body);
+  });
+  app.get('/api/events', async (_req, res) => {
+    if (config.livePublicOrigin) return res.json(await readLivePublicEvents(config));
     res.json({
       events: db
         .prepare("SELECT * FROM events WHERE status='published' AND starts_at>? ORDER BY starts_at")
         .all(new Date().toISOString())
         .map((e) => cleanEvent(db, e, config)),
-    }),
-  );
-  app.get('/api/events/:slug', (req, res) => {
+    });
+  });
+  app.get('/api/events/:slug', async (req, res) => {
+    if (config.livePublicOrigin)
+      return res.json(await readLivePublicEvents(config, req.params.slug));
     const event = db
       .prepare("SELECT * FROM events WHERE slug=? AND status IN ('published','paused','cancelled')")
       .get(req.params.slug);
@@ -518,6 +550,11 @@ export function createApp(db, config, health = createHealthMonitor(db, config)) 
   });
   app.use('/uploads', express.static(uploadDir, { maxAge: '7d', immutable: true }));
   app.post('/api/orders', checkoutLimit, async (req, res) => {
+    if (config.livePublicOrigin)
+      throw new HttpError(
+        403,
+        'Live events are read-only on localhost. Open the live website to purchase tickets.',
+      );
     const { order, created } = reserveOrder(db, req.body, config);
     if (created) {
       try {

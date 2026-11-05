@@ -10,6 +10,7 @@ const Dashboard = lazy(() => import('./Dashboard').then((m) => ({ default: m.Das
 const EventEditor = lazy(() => import('./EventEditor').then((m) => ({ default: m.EventEditor })));
 const Scanner = lazy(() => import('./Scanner').then((m) => ({ default: m.Scanner })));
 const Explore = lazy(() => import('./LandingPage').then((m) => ({ default: m.Explore })));
+const PricingPage = lazy(() => import('./PricingPage').then((m) => ({ default: m.PricingPage })));
 const EventPage = lazy(() => import('./PublicPages').then((m) => ({ default: m.EventPage })));
 const OrderPage = lazy(() => import('./PublicPages').then((m) => ({ default: m.OrderPage })));
 const TicketPage = lazy(() => import('./PublicPages').then((m) => ({ default: m.TicketPage })));
@@ -93,6 +94,7 @@ function EventApp() {
       <Suspense fallback={<Spinner label="Opening page" />}>
         <Routes>
           <Route path="/" element={root} />
+          <Route path="/pricing" element={<PricingPage />} />
           <Route path="/login" element={<AuthPage />} />
           <Route path="/register" element={<AuthPage register />} />
           <Route path="/e/:slug" element={<EventPage />} />

@@ -4,6 +4,7 @@ export function makeConfig(overrides = {}) {
   const production = process.env.NODE_ENV === 'production';
   const config = {
     production,
+    livePublicOrigin: process.env.LIVE_PUBLIC_ORIGIN || '',
     port: Number(process.env.PORT || 3001),
     dataDir: path.resolve(process.env.DATA_DIR || 'data'),
     baseDomain: process.env.BASE_DOMAIN || 'goldencreation.localhost',
@@ -39,6 +40,13 @@ export function makeConfig(overrides = {}) {
     workerHealth: { startedAt: null, lastCompleted: null, lastFailed: null },
     ...overrides,
   };
+  if (config.livePublicOrigin) {
+    if (config.production) throw new Error('Live public mirroring is for local development only.');
+    const origin = new URL(config.livePublicOrigin);
+    if (origin.protocol !== 'https:' || origin.username || origin.password)
+      throw new Error('LIVE_PUBLIC_ORIGIN must be an HTTPS origin.');
+    config.livePublicOrigin = origin.origin;
+  }
   if (!['demo', 'disabled', 'flutterwave', 'ecofy'].includes(config.paymentDriver))
     throw new Error('Unknown payment driver');
   if (!['auto', 'email', 'nextsms'].includes(config.payoutOtpDriver))

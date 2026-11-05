@@ -1,262 +1,220 @@
-import { ArrowUpRight, AudioLines, Check, MapPin, Ticket } from 'lucide-react';
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
+import { ArrowDown, ArrowUpRight } from 'lucide-react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import ScrollStack, { ScrollStackItem } from './ScrollStack';
 import TextLoop from './TextLoop';
 import './landing-hero.css';
+import './hero-stack.css';
 
-type HeroProps = { workspaceUrl: string; browse: (category?: string) => void };
-const heroStories = {
-  music: { category: 'Music', image: '/assets/sunset-sessions.jpg', title: 'Find your rhythm.' },
-  nightlife: {
-    category: 'Nightlife',
-    image: '/assets/niffer-party.jpg',
-    title: 'Make it a night.',
+const stories = [
+  {
+    category: 'Sports',
+    title: 'For the love\nof the game.',
+    eyebrow: 'THE CROWD. THE RUSH. THE MOMENT.',
+    description:
+      'From the first whistle to the final roar. Find match days, races, and sporting moments that bring everyone to their feet.',
+    tags: ['Match days', 'Outdoor adventures', 'Big energy'],
+    image: 'sports',
+    alt: 'Crowds watching a football match in a floodlit stadium',
+    accent: '#356448',
   },
-  arts: { category: 'Arts', image: '/assets/creative-table.jpg', title: 'Make room for art.' },
-};
+  {
+    category: 'Music',
+    title: 'Feel every\nsingle beat.',
+    eyebrow: 'YOUR SOUND. YOUR PEOPLE.',
+    description:
+      'Live voices. Hands in the air. That one song you’ll remember forever. Get closer to the music you love.',
+    tags: ['Live concerts', 'Festivals', 'Good vibrations'],
+    image: 'music',
+    alt: 'Music fans raising their hands beneath blue confetti',
+    accent: '#7565a5',
+  },
+  {
+    category: 'Nightlife',
+    title: 'A little later.\nA lot louder.',
+    eyebrow: 'AFTER DARK, ALL TOGETHER.',
+    description:
+      'Find your dance floor. Meet your next favourite DJ. Make a night of it, with good company and one more song.',
+    tags: ['DJ sets', 'Dance floors', 'After hours'],
+    image: 'nightlife',
+    alt: 'A crowd enjoying a live show after dark',
+    accent: '#a7482c',
+  },
+  {
+    category: 'Community',
+    title: 'Good people.\nGreat company.',
+    eyebrow: 'STRANGERS TODAY. FRIENDS TOMORROW.',
+    description:
+      'Shared interests, fresh faces, and a reason to get together. Discover gatherings that make your world feel a little closer.',
+    tags: ['Meet-ups', 'Shared passions', 'New connections'],
+    image: 'community',
+    alt: 'People spending an afternoon together in a green park',
+    accent: '#356448',
+  },
+  {
+    category: 'Culture',
+    filter: 'Arts',
+    title: 'Many stories.\nOne rhythm.',
+    eyebrow: 'ROOTED HERE. SHARED TOGETHER.',
+    description:
+      'Celebrate the traditions, creativity, and stories that make us who we are. There’s always something worth being part of.',
+    tags: ['Arts & culture', 'Local traditions', 'Creative moments'],
+    image: 'culture',
+    alt: 'A community celebrating together with traditional drumming',
+    accent: '#a7482c',
+  },
+];
 
-function StoryPhoto({
-  story,
-  priority = false,
+export function LandingHero({
+  workspaceUrl,
+  browse,
 }: {
-  story: typeof heroStories.music;
-  priority?: boolean;
+  workspaceUrl: string;
+  browse: (category?: string) => void;
 }) {
-  return (
-    <img
-      src={story.image}
-      alt=""
-      width={640}
-      height={800}
-      fetchPriority={priority ? 'high' : 'auto'}
-      onError={(event) => {
-        event.currentTarget.hidden = true;
-      }}
-    />
-  );
-}
-
-function HeroShowcase({ browse }: Pick<HeroProps, 'browse'>) {
-  const frameRef = useRef<HTMLDivElement>(null);
-  const stageRef = useRef<HTMLDivElement>(null);
-  const [scale, setScale] = useState(1);
+  const [word, setWord] = useState(0);
+  const wordWindow = useRef<HTMLSpanElement>(null);
+  const [wordWidth, setWordWidth] = useState<number>();
   useLayoutEffect(() => {
-    const frame = frameRef.current,
-      stage = stageRef.current;
-    if (!frame || !stage) return;
+    const windowElement = wordWindow.current;
+    const active = windowElement?.querySelector('.hero-word-track')?.children[word];
+    if (!windowElement || !(active instanceof HTMLElement)) return;
     const measure = () => {
-      setScale(
-        window.matchMedia('(min-width: 701px)').matches
-          ? Math.min(1, frame.clientHeight / Math.max(1, stage.offsetHeight))
-          : 1,
+      const style = getComputedStyle(windowElement);
+      setWordWidth(
+        Math.ceil(
+          active.getBoundingClientRect().width +
+            parseFloat(style.paddingLeft) +
+            parseFloat(style.paddingRight),
+        ),
       );
     };
     measure();
     const observer = new ResizeObserver(measure);
-    observer.observe(frame);
-    observer.observe(stage);
+    observer.observe(active);
     return () => observer.disconnect();
-  }, []);
-  return (
-    <div className="hero-showcase-fit" ref={frameRef}>
-      <div
-        className="hero-showcase"
-        ref={stageRef}
-        style={{ '--showcase-scale': scale } as CSSProperties}
-        aria-label="Discover your next experience"
-      >
-        <div className="hero-orbits" aria-hidden="true">
-          <span />
-          <span />
-          <span />
-        </div>
-
-        <button
-          className="hero-phone"
-          onClick={() => browse('Nightlife')}
-          aria-label="Explore nightlife events"
-        >
-          <span className="hero-phone-screen">
-            <StoryPhoto story={heroStories.nightlife} priority />
-            <span className="hero-phone-speaker" aria-hidden="true" />
-            <span className="hero-phone-top">
-              <span className="hero-profile-icon">
-                <Ticket size={16} />
-              </span>
-              <span>
-                golden.<small>YOUR NEXT NIGHT OUT</small>
-              </span>
-              <span className="hero-night-badge">
-                <span />
-                Nightlife
-              </span>
-            </span>
-            <span className="hero-phone-caption">
-              <span>AFTER DARK, ALL TOGETHER</span>
-              <strong>{heroStories.nightlife.title}</strong>
-              <span className="hero-phone-link">
-                Explore nightlife
-                <ArrowUpRight size={20} />
-              </span>
-            </span>
-            <span className="hero-phone-home" aria-hidden="true" />
-          </span>
-        </button>
-
-        <button
-          className="hero-media-card"
-          onClick={() => browse('Music')}
-          aria-label="Explore music events"
-        >
-          <StoryPhoto story={heroStories.music} />
-          <span className="hero-media-tag">
-            <AudioLines size={13} />
-            Music
-          </span>
-          <span className="hero-media-caption">
-            <strong>{heroStories.music.title}</strong>
-            <ArrowUpRight size={19} />
-          </span>
-        </button>
-
-        <button
-          className="hero-art-card"
-          onClick={() => browse('Arts')}
-          aria-label="Explore arts events"
-        >
-          <span className="hero-art-photo">
-            <StoryPhoto story={heroStories.arts} />
-            <span>ARTS & CULTURE</span>
-          </span>
-          <span className="hero-art-caption">
-            <span>
-              <small>A LITTLE INSPIRATION</small>
-              <strong>{heroStories.arts.title}</strong>
-            </span>
-            <ArrowUpRight size={20} />
-          </span>
-        </button>
-
-        <div className="hero-people-badge">
-          <span>Good people. Great plans.</span>
-        </div>
-
-        <a href="#events" className="hero-ticket-card">
-          <span className="hero-ticket-illustration" aria-hidden="true">
-            <Ticket size={51} strokeWidth={1.4} />
-            <span>
-              <Check size={12} />
-            </span>
-          </span>
-          <span>
-            <small>LESS FUSS. MORE FUN.</small>
-            <strong>
-              Book. Scan. <br />
-              You’re in.
-            </strong>
-          </span>
-          <ArrowUpRight size={18} />
-        </a>
-
-        <a href="#experiences" className="hero-moment-card">
-          <span className="hero-moment-kicker">GO WHERE YOU FEEL IT.</span>
-          <strong>
-            Your kind
-            <br />
-            of good time.
-          </strong>
-          <span className="hero-location-pill">
-            <MapPin size={12} />
-            Dar es Salaam & beyond
-          </span>
-          <ArrowUpRight className="hero-moment-arrow" size={20} />
-        </a>
-      </div>
-    </div>
-  );
-}
-
-export function LandingHero({ workspaceUrl, browse }: HeroProps) {
-  const [headlineIndex, setHeadlineIndex] = useState(0);
-  const [wordWindowWidth, setWordWindowWidth] = useState<number>();
-  const wordWindowRef = useRef<HTMLSpanElement>(null);
-  const wordRefs = useRef<Array<HTMLSpanElement | null>>([]);
-
+  }, [word]);
   useEffect(() => {
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    const interval = window.setInterval(() => {
-      setHeadlineIndex((current) => (current + 1) % 2);
-    }, 2600);
-    return () => window.clearInterval(interval);
-  }, []);
-
-  useLayoutEffect(() => {
-    const windowElement = wordWindowRef.current;
-    const activeWord = wordRefs.current[headlineIndex];
-    if (!windowElement || !activeWord) return;
-
-    const measure = () => {
-      const style = window.getComputedStyle(windowElement);
-      const padding = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
-      setWordWindowWidth(Math.ceil(activeWord.getBoundingClientRect().width + padding));
+    const preference = window.matchMedia('(prefers-reduced-motion: reduce)');
+    let timer: ReturnType<typeof setInterval> | undefined;
+    const update = () => {
+      clearInterval(timer);
+      if (preference.matches) setWord(0);
+      else timer = setInterval(() => setWord((value) => (value + 1) % 2), 2600);
     };
-
-    measure();
-    if (typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(measure);
-    observer.observe(activeWord);
-    return () => observer.disconnect();
-  }, [headlineIndex]);
+    update();
+    preference.addEventListener('change', update);
+    return () => {
+      clearInterval(timer);
+      preference.removeEventListener('change', update);
+    };
+  }, []);
 
   return (
     <div className="landing-opening-chapter">
-      <section
-        className="landing-hero-v2 landing-hero-split"
-        aria-labelledby="hero-title"
-      >
-        <div className="hero-copy">
-          <div className="hero-eyebrow">
-            <span />
-            DAR ES SALAAM & BEYOND
-          </div>
-          <h1 id="hero-title">
-            <span className="sr-only">Great stories</span>
-            <span className="hero-headline-visual" aria-hidden="true">
-              Great
+      <section className="hero-stack-lead" aria-labelledby="hero-title">
+        <div className="hero-eyebrow">
+          <span /> DAR ES SALAAM &amp; BEYOND
+        </div>
+        <h1 id="hero-title">
+          <span className="sr-only">Great stories. Great times.</span>
+          <span aria-hidden="true" className="hero-headline-visual">
+            Great{' '}
+            <span
+              className="hero-word-window"
+              ref={wordWindow}
+              style={wordWidth ? { width: wordWidth } : undefined}
+            >
               <span
-                className="hero-word-window"
-                ref={wordWindowRef}
-                style={wordWindowWidth ? { width: `${wordWindowWidth}px` } : undefined}
+                className="hero-word-track"
+                style={{ transform: `translateY(-${word * 1.08}em)` }}
               >
-                <span
-                  className="hero-word-track"
-                  style={{ transform: `translateY(-${headlineIndex * 1.08}em)` }}
-                >
-                  <span ref={(element) => { wordRefs.current[0] = element; }}>
-                    stories <i>✨</i>
-                  </span>
-                  <span ref={(element) => { wordRefs.current[1] = element; }}>
-                    times <i>🎉</i>
-                  </span>
+                <span>
+                  stories <i>✨</i>
+                </span>
+                <span>
+                  times <i>🎉</i>
                 </span>
               </span>
             </span>
-          </h1>
-          <p>
-            The nights you talk about. The people you meet. <br />
-            Find your next unforgettable moment, right here.
-          </p>
-          <div className="hero-actions">
-            <a className="hero-action hero-action-primary" href="#events">
-              Find your next event
-              <ArrowUpRight size={18} />
-            </a>
-            <a className="hero-action hero-action-secondary" href={workspaceUrl}>
-              Create an event
-              <ArrowUpRight size={18} />
-            </a>
-          </div>
+          </span>
+        </h1>
+        <p>
+          The nights you talk about. The people you meet.
+          <br />
+          Find your next unforgettable moment, right here.
+        </p>
+        <div className="hero-actions">
+          <a className="hero-action hero-action-primary" href="#events">
+            Find your next event <ArrowUpRight size={18} />
+          </a>
+          <a className="hero-action hero-action-secondary" href={workspaceUrl}>
+            Create an event <ArrowUpRight size={18} />
+          </a>
         </div>
-        <HeroShowcase browse={browse} />
+      </section>
+      <section className="hero-stack-section" aria-label="Find your kind of event">
+        <div className="hero-stack-intro">
+          <span>EVERY KIND OF GOOD TIME.</span>
+          <span>
+            Scroll to find yours <ArrowDown size={14} />
+          </span>
+        </div>
+        <ScrollStack
+          className="hero-stack"
+          useWindowScroll
+          itemDistance="var(--hero-stack-gap)"
+          stackPosition="var(--hero-stack-top)"
+          itemScale={0.045}
+          liftAmount={12}
+          baseScale={0.82}
+          dimAmount={0.035}
+          holdDistance="100svh"
+        >
+          {stories.map((story, index) => (
+            <ScrollStackItem
+              key={story.category}
+              itemClassName={`hero-stack-card${index % 2 ? ' hero-stack-reverse' : ''}`}
+              labelledBy={`hero-story-${index}`}
+            >
+              <div className="hero-stack-copy">
+                <span className="hero-stack-eyebrow" style={{ color: story.accent }}>
+                  {story.eyebrow}
+                </span>
+                <h2 id={`hero-story-${index}`} style={{ color: story.accent }}>
+                  {story.title}
+                </h2>
+                <p>{story.description}</p>
+                <ul aria-label={`${story.category} experiences`}>
+                  {story.tags.map((tag) => (
+                    <li key={tag}>{tag}</li>
+                  ))}
+                </ul>
+                <button
+                  className="hero-stack-cta"
+                  style={{ background: story.accent }}
+                  onClick={() => browse(story.filter || story.category)}
+                >
+                  Explore {story.category.toLowerCase()} <ArrowUpRight size={18} />
+                </button>
+                <span className="hero-stack-number">
+                  <span>{String(index + 1).padStart(2, '0')} / 05</span>
+                  {story.category}
+                </span>
+              </div>
+              <div className="hero-stack-photo">
+                <img
+                  src={`/assets/hero-${story.image}.webp`}
+                  alt={story.alt}
+                  width={900}
+                  height={1000}
+                  fetchPriority={index === 0 ? 'high' : 'auto'}
+                  loading={index < 2 ? 'eager' : 'lazy'}
+                />
+                <span>{story.category}</span>
+              </div>
+            </ScrollStackItem>
+          ))}
+        </ScrollStack>
       </section>
       <div className="hero-loop-reveal" data-scroll-reveal>
         <TextLoop text="Music · Nightlife · Community · Arts" />

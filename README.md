@@ -34,6 +34,13 @@ from the demo database.
 
 ## Included
 
+Local public previews can read current live events by setting
+`LIVE_PUBLIC_ORIGIN=https://goldencreations.events` in `.env` and restarting dev.
+Only public event and artwork GET requests go to the live site.
+Checkout is disabled locally in this mode; use the explicit live event link to
+buy tickets. Organizer accounts, edits, orders, and customer data stay local.
+Remove this setting to use the local demo catalog. Production rejects this setting.
+
 - Organizer registration, login, hashed passwords, sessions, profile, password changes.
 - One-page event creation/editing, draft/live/paused/cancelled states, image uploads.
 - Automatic unique event names, wildcard hostname routing, public event directory.
@@ -128,6 +135,7 @@ must pass server-side verification. A late payment that cannot be fulfilled is
 recorded as `review`, with no ticket issued, for organizer resolution.
 
 Official integration references:
+
 - [Tanzania mobile money](https://developer.flutterwave.com/docs/tanzania)
 - [Transaction verification](https://developer.flutterwave.com/docs/transaction-verification)
 - [Webhooks](https://developer.flutterwave.com/docs/webhooks)
@@ -476,6 +484,7 @@ SQLite, authentication, event/order logic, provider adapters, and the worker.
 `deploy/` contains VPS configuration, and `scripts/` contains operational tools.
 
 Demo photos are downloaded from Unsplash image sources:
+
 - `photo-1470229722913-7c0e2dbbafd3` (Niffer Party)
 - `photo-1501386761578-eac5c94b800a` (Sunset Sessions)
 - `photo-1513364776144-60967b0f800f` (The Creative Table)

@@ -200,7 +200,18 @@ export function EventPage({ hostSlug }: { hostSlug?: string }) {
               </div>
             </div>
             <aside className="checkout-aside">
-              {orderToken ? (
+              {event.readOnly ? (
+                <div className="checkout">
+                  <h2>Live event preview</h2>
+                  <p>
+                    This event is loaded from the live website. Purchases are available on the live
+                    site.
+                  </p>
+                  <a className="button primary" href={event.url} target="_blank" rel="noreferrer">
+                    Open live event <ExternalLink size={17} />
+                  </a>
+                </div>
+              ) : orderToken ? (
                 <OrderContent
                   token={orderToken}
                   onRetry={() => {

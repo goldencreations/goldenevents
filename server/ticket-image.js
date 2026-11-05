@@ -71,6 +71,7 @@ export async function renderTicketImage(event, ticket, config) {
     : '';
   const svg = `<svg width="800" height="${height}" xmlns="http://www.w3.org/2000/svg"><rect width="800" height="${height}" fill="#ffffff"/><rect width="800" height="260" fill="#d8efb4"/><g font-family="sans-serif" fill="#171715">${logo}${text('Golden', 103, 307, 30, 'font-weight="bold"')}${text('events', 104, 326, 11, 'fill="#686b66"')}${type.map((line, i) => text(line, 48, 365 + i * 28, 20, 'fill="#4b5d3c"')).join('')}${title.map((line, i) => text(line, 48, titleY + i * 46, titleSize, 'font-weight="bold"')).join('')}${text(date + ' EAT', 48, dateY, 22)}${venue.map((line, i) => text(line, 48, venueY + i * 28, venueSize, 'fill="#686b66"')).join('')}<path d="M0 ${perforationY}H800" stroke="#ccd4c4" stroke-dasharray="7 7"/>${text(ticket.code, 400, codeY, 24, 'text-anchor="middle" font-family="monospace"')}<rect x="235" y="${codeY + 20}" width="330" height="42" rx="4" fill="${ticket.checked_in_at ? '#f0f1ee' : '#d8efb4'}"/>${text(ticket.checked_in_at ? 'Already admitted' : 'Valid for one admission', 400, codeY + 48, 20, 'text-anchor="middle"')}${holder.map((line, i) => text(line, 400, codeY + 94 + i * 26, 18, 'text-anchor="middle"')).join('')}</g></svg>`;
   const layers = [];
+  let headerHeight = 260;
   let coverPath;
   const demoCover = event.image?.includes('photo-1470229722913')
     ? 'niffer-party.jpg'
@@ -87,9 +88,16 @@ export async function renderTicketImage(event, ticket, config) {
     coverPath = path.resolve(config.production ? 'dist' : 'public', '.' + event.image);
   if (coverPath) {
     try {
+      const artwork = await sharp(await readFile(coverPath))
+        .rotate()
+        .resize(800, 1600, { fit: 'inside' })
+        .png()
+        .toBuffer();
+      const dimensions = await sharp(artwork).metadata();
+      headerHeight = Math.max(260, dimensions.height);
       layers.push({
-        input: await sharp(await readFile(coverPath))
-          .resize(800, 260, { fit: 'cover' })
+        input: await sharp(artwork)
+          .resize(800, headerHeight, { fit: 'contain', background: '#fcfaf7' })
           .png()
           .toBuffer(),
         top: 0,
@@ -105,8 +113,13 @@ export async function renderTicketImage(event, ticket, config) {
       margin: 2,
       errorCorrectionLevel: 'M',
     }),
-    top: qrY,
+    top: qrY + headerHeight - 260,
     left: 220,
   });
-  return sharp(Buffer.from(svg)).composite(layers).png().toBuffer();
+  const offset = headerHeight - 260;
+  const fittedSvg = svg
+    .replaceAll(`height="${height}"`, `height="${height + offset}"`)
+    .replace('height="260"', `height="${headerHeight}"`)
+    .replace('<g font-family=', `<g transform="translate(0 ${offset})" font-family=`);
+  return sharp(Buffer.from(fittedSvg)).composite(layers).png().toBuffer();
 }

@@ -27,6 +27,7 @@ export type TicketType = {
   available?: number;
 };
 export type Event = {
+  readOnly?: boolean;
   id: string;
   name: string;
   slug: string;

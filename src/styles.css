@@ -1980,14 +1980,16 @@ tbody tr:hover {
 .uploaded-image {
   position: relative;
   margin-bottom: 25px;
-  height: 230px;
+  background: #f1f4f0;
   overflow: hidden;
   border-radius: 6px;
 }
 .uploaded-image img {
   width: 100%;
-  height: 100%;
-  object-fit: cover;
+  height: auto;
+  max-height: 550px;
+  object-fit: contain;
+  display: block;
 }
 .uploaded-image .icon-button {
   position: absolute;
@@ -2047,6 +2049,23 @@ tbody tr:hover {
   align-self: start;
   margin-top: 10px;
 }
+@keyframes preview-slide-in {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .editor-preview.preview-open {
+    animation: none !important;
+  }
+}
+.mobile-preview-button,
+.mobile-preview-toolbar {
+  display: none;
+}
 .preview-heading {
   display: flex;
   align-items: center;
@@ -2079,9 +2098,36 @@ tbody tr:hover {
   box-shadow: 0 5px 15px #20372b05;
 }
 .preview-image {
-  height: 195px;
-  object-fit: cover;
+  display: block;
+  height: auto;
+  object-fit: contain;
   width: 100%;
+  background: #f1f4f0;
+}
+.preview-image.image-placeholder {
+  display: flex;
+  height: 195px;
+}
+.crop-picture {
+  position: absolute;
+  bottom: 12px;
+  left: 12px;
+}
+.crop-stage {
+  text-align: center;
+  background: #f1f4f0;
+  margin: 16px 0;
+}
+.crop-stage img {
+  display: block;
+  max-width: 100%;
+  max-height: 50vh;
+}
+.crop-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: flex-end;
 }
 .preview-body {
   padding: 22px;
@@ -2823,27 +2869,26 @@ tbody tr:hover {
 }
 .ticket-art {
   position: relative;
-  height: 150px;
+  min-height: 150px;
   overflow: hidden;
 }
 .ticket-art img,
 .ticket-art > .image-placeholder {
   width: 100%;
-  height: 100%;
-  object-fit: cover;
+  height: auto;
+  object-fit: contain;
   min-height: 0;
 }
 .ticket-art:after {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(transparent, #15281eaa);
+  pointer-events: none;
 }
 .ticket-art > div:last-child {
-  position: absolute;
-  bottom: 18px;
-  left: 24px;
-  right: 24px;
+  position: relative;
+  padding: 18px 24px;
+  background: #15281e;
   color: white;
   z-index: 1;
 }
@@ -3385,6 +3430,43 @@ tbody tr:hover {
     position: static;
     max-width: 380px;
     display: none;
+  }
+  .editor-actions { flex-wrap: wrap; }
+  .editor-actions .mobile-preview-button { flex-basis: 100%; }
+  .mobile-preview-button {
+    display: inline-flex;
+    flex-shrink: 0;
+  }
+  .editor-preview.preview-open {
+    display: block;
+    position: fixed;
+    inset: 0;
+    height: 100dvh;
+    width: 100%;
+    z-index: 1000;
+    margin: 0;
+    padding: 0 20px max(28px, env(safe-area-inset-bottom));
+    max-width: none;
+    background: #fcfcfa;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    animation: preview-slide-in 250ms ease-out;
+  }
+  .mobile-preview-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    padding: max(16px, env(safe-area-inset-top)) 0 16px;
+    margin-bottom: 20px;
+    background: #fcfcfa;
+    border-bottom: 1px solid var(--line);
+  }
+  .preview-open .preview-surface {
+    margin-inline: auto;
   }
   .editor-step {
     display: none;
@@ -4661,4 +4743,13 @@ tbody tr:hover {
   .payout-form .modal-actions .button {
     flex: 1;
   }
+}
+
+/* Let artwork keep its own proportions, including on narrow event pages. */
+img.event-public-cover {
+  display: block;
+  height: auto;
+  max-height: none;
+  aspect-ratio: auto;
+  object-fit: contain;
 }

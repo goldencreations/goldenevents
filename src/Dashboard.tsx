@@ -157,10 +157,10 @@ export function Shell({ children, title = 'Overview' }: { children: ReactNode; t
               Administration
             </NavLink>
           )}
-          <Link to="/">
+          <a href={config.publicOrigin}>
             <ExternalLink size={18} />
-            Explore events
-          </Link>
+            Back to homepage
+          </a>
           {config.demo && (
             <div className="demo-label">
               <span />

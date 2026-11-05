@@ -167,7 +167,7 @@ export function Explore() {
   };
 
   return (
-    <div className="landing-page" id="top" ref={pageRef}>
+    <div className="landing-page stacked-landing" id="top" ref={pageRef}>
       <a className="landing-skip" href="#events">
         Skip to events
       </a>
@@ -187,6 +187,7 @@ export function Explore() {
           <a href="#events">Discover events</a>
           <a href="#experiences">Experiences</a>
           <a href="#organizers">For organizers</a>
+          <Link to="/pricing">Pricing</Link>
         </nav>
         <div className="landing-header-actions">
           <button
@@ -232,6 +233,9 @@ export function Explore() {
               For organizers
               <ArrowUpRight size={18} />
             </a>
+            <Link to="/pricing" onClick={() => setMenuOpen(false)}>
+              Pricing <ArrowUpRight size={18} />
+            </Link>
           </nav>
         )}
       </header>
@@ -543,6 +547,7 @@ export function Explore() {
               <Brand light ticketLogo />
             </Link>
             <span>© {new Date().getFullYear()} Golden Creation</span>
+            <Link to="/pricing">Pricing</Link>
             <a href={`${config.publicOrigin}/status`}>
               System status
               <ArrowUpRight size={14} />
