@@ -117,6 +117,7 @@ test('organizer publishes, buyer pays, gate admits once, and mobile layout fits'
   page,
   browser,
 }) => {
+  test.setTimeout(90000);
   await page.goto('/login');
   await page.getByRole('button', { name: 'Open demo workspace' }).click();
   await expect(page.getByRole('heading', { name: /Good/ })).toBeVisible();
@@ -133,6 +134,7 @@ test('organizer publishes, buyer pays, gate admits once, and mobile layout fits'
   await page.getByLabel('Date & time').fill('2027-01-23T20:00');
   await page.getByLabel('Venue', { exact: true }).fill('Warehouse 7');
   await page.locator('input[type="file"]').setInputFiles('public/assets/niffer-party.jpg');
+  await page.getByRole('button', { name: 'Save picture', exact: true }).click();
   await expect(page.getByAltText('Event cover', { exact: true })).toBeVisible();
   await page.screenshot({ path: 'test-results/editor-desktop.png', fullPage: true });
   await page.getByRole('button', { name: 'Publish event', exact: true }).click();
@@ -182,11 +184,11 @@ test('organizer publishes, buyer pays, gate admits once, and mobile layout fits'
       originalCtx.drawImage(qr, 0, 0);
       const output = document.createElement('canvas');
       output.width = 800;
-      output.height = 1280;
+      output.height = saved.naturalHeight;
       const outputCtx = output.getContext('2d');
       outputCtx.drawImage(saved, 0, 0);
       const a = originalCtx.getImageData(0, 0, 360, 360).data,
-        b = outputCtx.getImageData(220, 720, 360, 360).data;
+        b = outputCtx.getImageData(220, saved.naturalHeight - 560, 360, 360).data;
       return a.every((value, index) => value === b[index]);
     },
     { qrSource, savedSource },

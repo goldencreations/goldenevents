@@ -288,7 +288,7 @@
     border-radius: 14px;
     margin-bottom: 0;
   }
-  .hero-stack {
+  .scroll-stack.hero-stack {
     --hero-stack-top: 92px;
     --hero-stack-gap: 34vh;
   }

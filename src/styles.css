@@ -4753,3 +4753,8 @@ img.event-public-cover {
   aspect-ratio: auto;
   object-fit: contain;
 }
+@media (max-width: 700px) {
+  img.event-public-cover {
+    max-height: 170px;
+  }
+}
