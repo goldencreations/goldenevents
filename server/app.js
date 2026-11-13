@@ -94,7 +94,7 @@ export function createApp(db, config, health = createHealthMonitor(db, config)) 
       contentSecurityPolicy: config.production
         ? {
             directives: {
-              'img-src': ["'self'", 'data:', 'https://images.unsplash.com'],
+              'img-src': ["'self'", 'data:', 'blob:', 'https://images.unsplash.com'],
               'script-src': ["'self'"],
               'connect-src': ["'self'"],
               'upgrade-insecure-requests': [],
