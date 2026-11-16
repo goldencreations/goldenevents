@@ -4404,6 +4404,31 @@ tbody tr:hover {
   }
 }
 
+.payout-phone-warning {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+#security-phone {
+  scroll-margin-block: 80px;
+}
+.security-phone-highlight {
+  border-radius: 8px;
+  outline: 4px solid transparent;
+  outline-offset: 4px;
+  animation: security-phone-outline 2s ease-out;
+}
+@keyframes security-phone-outline {
+  0%, 65% { outline-color: #c34b23; }
+  100% { outline-color: transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .security-phone-highlight {
+    animation-timing-function: steps(1, end);
+  }
+}
 .finance-section {
   margin-bottom: 32px;
   min-width: 0;

@@ -1,4 +1,5 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useLocation, useNavigationType } from 'react-router-dom';
 import { ShieldCheck, Smartphone, RefreshCw } from 'lucide-react';
 import { api, send } from './api';
 import { useApp } from './context';
@@ -9,6 +10,22 @@ type PhoneState = { available: boolean; verified: boolean; phone: string | null 
 type Code = { challenge_id: string; phone: string; expires_at: number; resend_after: number };
 export function PhoneSecurity() {
   const { user, setUser, notify } = useApp();
+  const { hash, state: navigationState } = useLocation();
+  const navigationType = useNavigationType();
+  const highlight =
+    hash === '#security-phone' &&
+    navigationType === 'PUSH' &&
+    navigationState?.highlightSecurityPhone === true;
+  const heading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    if (hash !== '#security-phone') return;
+    // Focus after the route's scroll reset.
+    const frame = requestAnimationFrame(() => {
+      heading.current?.scrollIntoView({ block: 'start' });
+      heading.current?.focus({ preventScroll: true });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [hash]);
   const [state, setState] = useState<PhoneState | null>(null);
   const [phone, setPhone] = useState(user?.phone || ''),
     [password, setPassword] = useState('');
@@ -78,9 +95,11 @@ export function PhoneSecurity() {
   const seconds = challenge ? Math.max(0, Math.ceil((challenge.expires_at - now) / 1000)) : 0;
   const cooldown = Math.max(0, Math.ceil((resendAt - now) / 1000));
   return (
-    <div className="settings-section">
+    <div className={highlight ? 'settings-section security-phone-highlight' : 'settings-section'}>
       <div>
-        <h2>Security phone</h2>
+        <h2 id="security-phone" ref={heading} tabIndex={-1}>
+          Security phone
+        </h2>
         <p className="muted">Payout authorization</p>
       </div>
       <div>

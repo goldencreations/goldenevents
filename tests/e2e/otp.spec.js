@@ -1,5 +1,33 @@
 import { test, expect } from '@playwright/test';
 
+test('payout warning opens the security phone verification form', async ({ page }) => {
+  await page.route('**/api/organizer/finance', async (route) => {
+    const response = await route.fetch();
+    const finance = await response.json();
+    await route.fulfill({
+      json: { ...finance, verification: 'nextsms', verification_phone_ready: false },
+    });
+  });
+  await page.route('**/api/settings/phone', (route) =>
+    route.fulfill({ json: { available: true, verified: false, phone: null } }),
+  );
+  await page.goto('/login');
+  await page.getByRole('button', { name: 'Open demo workspace' }).click();
+  await expect(page).toHaveURL(/\/dashboard$/);
+  await page.goto('/dashboard/revenue');
+  await page.getByRole('alert').getByRole('link', { name: 'Verify phone' }).click();
+  await expect(page).toHaveURL(/\/dashboard\/settings#security-phone$/);
+  await expect(page.getByRole('heading', { name: 'Security phone', exact: true })).toBeFocused();
+  await expect(page.getByRole('button', { name: 'Send verification code' })).toBeInViewport();
+  const section = page.locator('.settings-section').filter({
+    has: page.getByRole('heading', { name: 'Security phone', exact: true }),
+  });
+  await expect(section).toHaveCSS('outline-width', '4px');
+  await expect(section).toHaveCSS('outline-color', 'rgba(0, 0, 0, 0)');
+  await page.reload();
+  await expect(section).not.toHaveClass(/security-phone-highlight/);
+});
+
 test('security-phone enrollment handles wrong code, expiry, resend and verified state on desktop/mobile', async ({
   page,
 }) => {
