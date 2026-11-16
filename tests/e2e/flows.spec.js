@@ -153,8 +153,16 @@ test('organizer publishes, buyer pays, gate admits once, and mobile layout fits'
     /goldencreation.localhost:5181/,
   );
   await buyer.getByLabel('Mobile money number', { exact: true }).fill('0712345678');
+  const whatsapp = buyer.getByRole('checkbox', { name: 'Send my ticket to this number on WhatsApp' });
+  await expect(whatsapp).toBeVisible();
+  await expect(whatsapp).not.toBeChecked();
+  await whatsapp.check();
   await buyer.screenshot({ path: 'test-results/checkout-desktop.png', fullPage: true });
+  const orderRequest = buyer.waitForRequest(
+    (request) => request.method() === 'POST' && new URL(request.url()).pathname === '/api/orders',
+  );
   await buyer.getByRole('button', { name: 'Pay TZS 20,000', exact: true }).click();
+  expect((await orderRequest).postDataJSON()).toMatchObject({ whatsapp: true });
   await expect(buyer).toHaveURL(/\?order=[a-f0-9]+/);
   await buyer.reload();
   await expect(buyer.getByRole('heading', { name: 'Check your phone.' })).toBeVisible();

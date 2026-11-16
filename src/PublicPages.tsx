@@ -316,6 +316,14 @@ export function EventPage({ hostSlug }: { hostSlug?: string }) {
                         <span className="network-mixx">Mixx by Yas</span>
                         <span className="network-halo">HaloPesa</span>
                       </div>
+                      <label className="checkbox-label">
+                        <input
+                          type="checkbox"
+                          checked={whatsapp}
+                          onChange={(e) => setWhatsapp(e.target.checked)}
+                        />
+                        Send my ticket to this number on WhatsApp
+                      </label>
                       {config.paymentDriver === 'flutterwave' ? (
                         <label>
                           Email address
@@ -334,8 +342,7 @@ export function EventPage({ hostSlug }: { hostSlug?: string }) {
                             type="button"
                             onClick={() => setExtras(!extras)}
                           >
-                            {extras ? <Minus size={14} /> : <Plus size={14} />}Email or WhatsApp
-                            ticket
+                            {extras ? <Minus size={14} /> : <Plus size={14} />}Email me a ticket
                           </button>
                           {extras && (
                             <div className="optional-delivery">
@@ -348,27 +355,9 @@ export function EventPage({ hostSlug }: { hostSlug?: string }) {
                                   placeholder="you@example.com"
                                 />
                               </label>
-                              <label className="checkbox-label">
-                                <input
-                                  type="checkbox"
-                                  checked={whatsapp}
-                                  onChange={(e) => setWhatsapp(e.target.checked)}
-                                />
-                                Send my ticket to this number on WhatsApp
-                              </label>
                             </div>
                           )}
                         </>
-                      )}
-                      {config.paymentDriver === 'flutterwave' && (
-                        <label className="checkbox-label">
-                          <input
-                            type="checkbox"
-                            checked={whatsapp}
-                            onChange={(e) => setWhatsapp(e.target.checked)}
-                          />
-                          Send my ticket on WhatsApp
-                        </label>
                       )}
                       {error && <ErrorBox>{error}</ErrorBox>}
                       <span className="sr-only" aria-live="polite">
