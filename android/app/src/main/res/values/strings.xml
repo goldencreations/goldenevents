@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Golden Events</string>
+    <string name="title_activity_main">Golden Events</string>
+    <string name="package_name">events.goldencreation.app</string>
+    <string name="custom_url_scheme">events.goldencreation.app</string>
+</resources>

@@ -8,6 +8,7 @@ import {
   HelpCircle,
 } from 'lucide-react';
 import { Brand } from './ui';
+import { apiUrl } from './api';
 
 type State = 'operational' | 'degraded' | 'down' | 'unknown' | 'not_configured';
 type Snapshot = {
@@ -55,7 +56,7 @@ export function StatusPage() {
   async function load(signal?: AbortSignal) {
     setBusy(true);
     try {
-      const response = await fetch('/api/status', {
+      const response = await fetch(apiUrl('/status'), {
         cache: 'no-store',
         signal: signal
           ? AbortSignal.any([signal, AbortSignal.timeout(8000)])
