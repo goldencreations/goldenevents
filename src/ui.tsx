@@ -1,7 +1,7 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import { Ticket, X, Loader2, ArrowUpRight, CalendarDays, MapPin } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { dateLabel, money } from './api';
+import { assetUrl, dateLabel, money } from './api';
 import type { Event } from './types';
 
 export function Brand({
@@ -109,13 +109,15 @@ export function Modal({
   );
 }
 export function eventImageSource(image: string) {
-  return image.includes('photo-1470229722913')
-    ? '/assets/niffer-party.jpg'
-    : image.includes('photo-1501386761578')
-      ? '/assets/sunset-sessions.jpg'
-      : image.includes('photo-1513364776144')
-        ? '/assets/creative-table.jpg'
-        : image;
+  return assetUrl(
+    image.includes('photo-1470229722913')
+      ? '/assets/niffer-party.jpg'
+      : image.includes('photo-1501386761578')
+        ? '/assets/sunset-sessions.jpg'
+        : image.includes('photo-1513364776144')
+          ? '/assets/creative-table.jpg'
+          : image,
+  );
 }
 export function EventImage({
   event,

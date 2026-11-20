@@ -36,6 +36,7 @@ import {
 } from './otp.js';
 import { renderPage } from './metadata.js';
 import { transaction } from './db.js';
+import { shellOriginKey } from './config.js';
 import { scannerEmailAvailable, sendScannerInvitation } from './scanner-mail.js';
 import {
   organizerFinance,
@@ -86,6 +87,7 @@ export function createApp(db, config, health = createHealthMonitor(db, config)) 
           ),
         ],
   );
+  const appShellOrigins = new Set(config.appShellOrigins || []);
   const app = express();
   app.disable('x-powered-by');
   if (config.production) app.set('trust proxy', 1);
@@ -103,6 +105,27 @@ export function createApp(db, config, health = createHealthMonitor(db, config)) 
         : false,
     }),
   );
+  app.use('/api', (req, res, next) => {
+    const raw = req.get('origin');
+    let key = null;
+    if (raw) {
+      try {
+        key = shellOriginKey(raw);
+      } catch {
+        /* Malformed origins receive no CORS headers. */
+      }
+    }
+    if (key && appShellOrigins.has(key)) {
+      res.set('Access-Control-Allow-Origin', key);
+      res.set('Vary', 'Origin');
+      res.set('Access-Control-Allow-Credentials', 'true');
+      res.set('Access-Control-Allow-Methods', 'GET,HEAD,POST,PUT,DELETE,OPTIONS');
+      res.set('Access-Control-Allow-Headers', 'Accept,Content-Type');
+      res.set('Access-Control-Max-Age', '600');
+      if (req.method === 'OPTIONS') return res.sendStatus(204);
+    }
+    next();
+  });
   app.use('/api/webhooks/ecofy', express.raw({ type: 'application/json', limit: '64kb' }));
   app.use(express.json({ limit: '64kb' }), cookieParser());
   app.use('/api', (_req, res, next) => {
@@ -169,7 +192,9 @@ export function createApp(db, config, health = createHealthMonitor(db, config)) 
       let valid = false;
       try {
         const origin = new URL(req.get('origin'));
-        valid = origin.host === req.get('host') && ['http:', 'https:'].includes(origin.protocol);
+        valid =
+          (origin.host === req.get('host') && ['http:', 'https:'].includes(origin.protocol)) ||
+          appShellOrigins.has(shellOriginKey(origin));
       } catch {
         /* Missing and malformed origins are rejected. */
       }
@@ -218,7 +243,7 @@ export function createApp(db, config, health = createHealthMonitor(db, config)) 
     res.cookie('ge_session', raw, {
       httpOnly: true,
       secure: config.production,
-      sameSite: 'lax',
+      sameSite: config.production ? 'none' : 'lax',
       maxAge: 7 * 86400000,
       path: '/',
     });

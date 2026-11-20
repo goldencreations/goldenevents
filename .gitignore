@@ -1,11 +1,20 @@
 node_modules/
 dist/
+dist-mobile/
 data/
 .env
 .env.*
 !.env.example
+!.env.mobile
 test-results/
 playwright-report/
 .DS_Store
 *.log
 *.tsbuildinfo
+android/app/src/main/assets/public/
+ios/App/App/public/
+ios/App/Pods/
+# Signing keys are CI secrets, never committed
+*.keystore
+*.jks
+
