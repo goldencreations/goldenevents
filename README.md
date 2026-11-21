@@ -48,6 +48,23 @@ from the demo database.
 - Durable SMS/email/WhatsApp outbox and configurable SMTP/Twilio delivery.
 - Docker, Nginx wildcard configuration, database backup command, automated checks.
 
+## API Documentation
+
+Open `/api/docs` for Swagger UI and `/api/openapi.json` for the downloadable
+OpenAPI 3.0 contract (also importable into Postman). All application routes are
+covered by an automated route-coverage test. Swagger assets are self-hosted;
+production disables interactive execution to avoid accidental money transfers
+or messages. Read [the mobile developer handoff](docs/mobile-api.md) for complete
+checkout, sharing, scanning and payout workflows, errors and limitations.
+
+Native clients sign in with JSON email/password at `POST /api/auth/token`, then
+use the opaque seven-day `Authorization: Bearer` token. Tokens are hashed at rest;
+logout revokes the current session and password changes revoke all sessions.
+Browser sessions retain their existing cookies and origin protections. Public
+native mutations without a token must provide the matching `Origin` header;
+see the handoff before implementing authentication. Provider secrets stay on
+the server and must never be bundled in a mobile app.
+
 ## Gate Teams
 
 Open **Gate team**, choose an event, and enter the scanner's name and email.

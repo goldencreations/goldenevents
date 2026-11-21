@@ -5,6 +5,7 @@ import cookieParser from 'cookie-parser';
 import multer from 'multer';
 import sharp from 'sharp';
 import QRCode from 'qrcode';
+import { mountApiDocs } from './api-docs.js';
 import { renderTicketImage } from './ticket-image.js';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { mkdirSync, existsSync, readFileSync } from 'node:fs';
@@ -147,25 +148,11 @@ export function createApp(db, config, health = createHealthMonitor(db, config)) 
       host.endsWith(`.${config.baseDomain}`) ||
       (!config.production && ['localhost', '127.0.0.1', '[::1]'].includes(host));
     if (!allowed) return res.status(400).json({ error: 'Unknown hostname.' });
-    if (
-      req.path.startsWith('/api/') &&
-      !['GET', 'HEAD', 'OPTIONS'].includes(req.method) &&
-      !['/api/webhooks/flutterwave', '/api/webhooks/ecofy'].includes(req.path)
-    ) {
-      let valid = false;
-      try {
-        const origin = new URL(req.get('origin'));
-        valid = origin.host === req.get('host') && ['http:', 'https:'].includes(origin.protocol);
-      } catch {
-        /* Missing and malformed origins are rejected. */
-      }
-      if (!valid)
-        return res.status(403).json({ error: 'Request origin does not match this application.' });
-    }
-    next();
-  });
-  app.use((req, _res, next) => {
-    const raw = req.cookies.ge_session;
+    const authorization = req.get('authorization');
+    const bearer = authorization?.match(/^Bearer (ge_mobile_[a-f0-9]{64})$/i)?.[1];
+    const cookie = req.cookies.ge_session;
+    // Mobile credentials are explicit, never read from a browser cookie or URL.
+    const raw = authorization ? bearer : cookie?.startsWith('ge_mobile_') ? null : cookie;
     req.user = raw
       ? db
           .prepare(
@@ -174,6 +161,28 @@ export function createApp(db, config, health = createHealthMonitor(db, config)) 
           )
           .get(tokenHash(raw), Date.now())
       : null;
+    if (authorization && (!bearer || !req.user))
+      return res.status(401).json({ error: 'Access token is invalid or expired. Sign in again.' });
+    req.accessToken = bearer;
+    if (
+      req.path.startsWith('/api/') &&
+      !['GET', 'HEAD', 'OPTIONS'].includes(req.method) &&
+      !['/api/webhooks/flutterwave', '/api/webhooks/ecofy'].includes(req.path)
+    ) {
+      // Native token login is password-authenticated, JSON-only, and cookie-free.
+      let valid =
+        !req.get('origin') &&
+        (!!bearer ||
+          (req.path === '/api/auth/token' && !req.get('cookie') && req.is('application/json')));
+      try {
+        const origin = new URL(req.get('origin'));
+        valid = origin.host === req.get('host') && ['http:', 'https:'].includes(origin.protocol);
+      } catch {
+        /* Only the explicit native flows above allow a missing Origin. */
+      }
+      if (!valid)
+        return res.status(403).json({ error: 'Request origin does not match this application.' });
+    }
     next();
   });
   const auth = (req, _res, next) => {
@@ -217,6 +226,7 @@ export function createApp(db, config, health = createHealthMonitor(db, config)) 
       },
     });
   };
+  mountApiDocs(app, config);
   app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
   app.get('/api/ready', (_req, res) => {
     const result = health.readiness();
@@ -348,16 +358,37 @@ export function createApp(db, config, health = createHealthMonitor(db, config)) 
     db.prepare('INSERT INTO users VALUES (?,?,?,?,?,?,?,?)').run(...Object.values(user));
     login(res, user);
   });
-  app.post('/api/auth/login', authLimit, (req, res) => {
-    const { email, password } = req.body;
+  const passwordUser = (body) => {
+    const { email, password } = body || {};
     if (typeof email !== 'string' || typeof password !== 'string' || password.length > 128)
       throw new HttpError(400, 'Enter your email and password.');
     const user = db.prepare('SELECT * FROM users WHERE email=?').get(email.toLowerCase());
-    // Equalize the password work for missing accounts.
     const hash = user?.password || `${'0'.repeat(32)}:${'0'.repeat(128)}`;
     if (!verifyPassword(password, hash) || !user)
       throw new HttpError(401, 'Email or password is incorrect.');
-    login(res, user);
+    return user;
+  };
+  app.post('/api/auth/token', authLimit, (req, res) => {
+    const user = passwordUser(req.body);
+    const raw = `ge_mobile_${randomBytes(32).toString('hex')}`;
+    const expiresAt = Date.now() + 7 * 86400000;
+    db.prepare('DELETE FROM sessions WHERE expires_at<?').run(Date.now());
+    db.prepare('INSERT INTO sessions VALUES (?,?,?)').run(tokenHash(raw), user.id, expiresAt);
+    res.json({
+      access_token: raw,
+      token_type: 'Bearer',
+      expires_in: 7 * 86400,
+      expires_at: expiresAt,
+      user: {
+        ...publicUser(user),
+        must_change_password: !!db
+          .prepare('SELECT 1 FROM scanner_bootstrap WHERE user_id=?')
+          .get(user.id),
+      },
+    });
+  });
+  app.post('/api/auth/login', authLimit, (req, res) => {
+    login(res, passwordUser(req.body));
   });
   app.post('/api/auth/demo', authLimit, (_req, res) => {
     if (config.production || !config.seedDemo) throw new HttpError(404, 'Not found.');
@@ -368,8 +399,8 @@ export function createApp(db, config, health = createHealthMonitor(db, config)) 
     login(res, user);
   });
   app.post('/api/auth/logout', (req, res) => {
-    if (req.cookies.ge_session)
-      db.prepare('DELETE FROM sessions WHERE token=?').run(tokenHash(req.cookies.ge_session));
+    const raw = req.accessToken || req.cookies.ge_session;
+    if (raw) db.prepare('DELETE FROM sessions WHERE token=?').run(tokenHash(raw));
     res.clearCookie('ge_session', { path: '/' }).json({ ok: true });
   });
   app.get('/api/settings/phone', auth, (req, res) => {

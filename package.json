@@ -15,6 +15,7 @@
     "test:e2e:serve": "concurrently -k \"NODE_ENV=test PORT=3101 DATA_DIR=./data/e2e PUBLIC_ORIGIN=http://goldencreation.localhost:5181 APP_ORIGIN=http://app.goldencreation.localhost:5181 node server/index.js\" \"API_PORT=3101 vite --host 127.0.0.1 --port 5181 --strictPort\"",
     "check": "npm run build && npm test",
     "admin:create": "node --env-file-if-exists=.env scripts/create-admin.js",
+    "api:export": "node scripts/export-openapi.js",
     "backup": "node --env-file-if-exists=.env scripts/backup.js"
   },
   "dependencies": {
@@ -33,9 +34,11 @@
     "react-dom": "^19.1.1",
     "react-router-dom": "^7.9.3",
     "sharp": "^0.35.5",
+    "swagger-ui-dist": "5.35.1",
     "zod": "^4.1.11"
   },
   "devDependencies": {
+    "@apidevtools/swagger-parser": "13.1.0",
     "@playwright/test": "^1.56.0",
     "@types/react": "^19.1.16",
     "@types/react-dom": "^19.1.9",
