@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -267,6 +267,33 @@ test('long ticket labels grow the image without squeezing the QR or clipping hol
   assert.ok(meta.height > 1280);
   const pixels = await sharp(png).raw().toBuffer();
   assert.ok(pixels.some((value) => value < 50));
+});
+
+test('portrait ticket artwork keeps all edges and expands the ticket', async (t) => {
+  const { config, event } = fixture(t);
+  mkdirSync(path.join(config.dataDir, 'uploads'), { recursive: true });
+  writeFileSync(
+    path.join(config.dataDir, 'uploads', 'portrait.png'),
+    await sharp({ create: { width: 400, height: 800, channels: 3, background: '#dd3366' } })
+      .png()
+      .toBuffer(),
+  );
+  const png = await renderTicketImage(
+    { ...event, image: '/uploads/portrait.png' },
+    { code: 'TEST', token: 'test', ticket_type: 'Regular' },
+    config,
+  );
+  const meta = await sharp(png).metadata();
+  assert.equal(meta.width, 800);
+  assert.equal(meta.height, 2620);
+  const { data, info } = await sharp(png).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+  for (const [x, y] of [
+    [1, 1],
+    [798, 1598],
+  ]) {
+    const offset = (y * info.width + x) * info.channels;
+    assert.deepEqual([...data.subarray(offset, offset + 3)], [221, 51, 102]);
+  }
 });
 
 test('private ticket image endpoint rejects cancelled and rotated credentials', async (t) => {

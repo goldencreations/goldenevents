@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -13,12 +13,19 @@ import {
   Check,
   ExternalLink,
   X,
+  Eye,
 } from 'lucide-react';
 import { api, send, dateLabel, timeLabel, money } from './api';
 import { useApp } from './context';
 import { Shell } from './Dashboard';
 import { ErrorBox, Spinner, EventImage, Modal } from './ui';
 import type { Event, TicketType } from './types';
+import { ImageCropper } from './ImageCropper';
+
+type TicketDraft = Omit<TicketType, 'price' | 'capacity'> & {
+  price: number | '';
+  capacity: number | '';
+};
 
 const localDate = (iso: string) => {
   const date = new Date(new Date(iso).getTime() + 3 * 3600000);
@@ -35,7 +42,7 @@ export function EventEditor() {
     [city, setCity] = useState('Dar es Salaam'),
     [category, setCategory] = useState('Music'),
     [image, setImage] = useState(''),
-    [tickets, setTickets] = useState<TicketType[]>([
+    [tickets, setTickets] = useState<TicketDraft[]>([
       { name: 'Regular', price: 20000, capacity: 100 },
     ]),
     [slug, setSlug] = useState('your-event'),
@@ -46,6 +53,54 @@ export function EventEditor() {
     [error, setError] = useState(''),
     [success, setSuccess] = useState<Event | null>(null),
     [copied, setCopied] = useState(false);
+  const [cropSource, setCropSource] = useState('');
+  const [previewRatio, setPreviewRatio] = useState(1.6);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const previewButton = useRef<HTMLButtonElement>(null);
+  const previewBack = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!previewOpen) return;
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    previewBack.current?.focus();
+    const media = window.matchMedia('(max-width: 900px)');
+    const resize = () => {
+      if (!media.matches) setPreviewOpen(false);
+    };
+    const key = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setPreviewOpen(false);
+      if (event.key === 'Tab') {
+        event.preventDefault();
+        previewBack.current?.focus();
+      }
+    };
+    media.addEventListener('change', resize);
+    window.addEventListener('keydown', key);
+    return () => {
+      document.body.style.overflow = overflow;
+      media.removeEventListener('change', resize);
+      window.removeEventListener('keydown', key);
+      previewButton.current?.focus();
+    };
+  }, [previewOpen]);
+  useEffect(
+    () => () => {
+      if (cropSource.startsWith('blob:')) URL.revokeObjectURL(cropSource);
+    },
+    [cropSource],
+  );
+  const chooseImage = (file?: File) => {
+    if (!file) return;
+    if (
+      !['image/jpeg', 'image/png', 'image/webp'].includes(file.type) ||
+      file.size > 5 * 1024 * 1024
+    ) {
+      setError('Choose a JPG, PNG, or WebP picture under 5 MB.');
+      return;
+    }
+    setError('');
+    setCropSource(URL.createObjectURL(file));
+  };
   useEffect(() => {
     if (!id) return;
     api<{ event: Event }>(`/organizer/events/${id}`)
@@ -90,13 +145,15 @@ export function EventEditor() {
       data.append('image', file);
       const result = await api<{ url: string }>('/uploads', { method: 'POST', body: data });
       setImage(result.url);
+      setCropSource('');
     } catch (e) {
       setError((e as Error).message);
+      throw e;
     } finally {
       setUploading(false);
     }
   };
-  const updateTicket = (index: number, patch: Partial<TicketType>) =>
+  const updateTicket = (index: number, patch: Partial<TicketDraft>) =>
     setTickets(tickets.map((t, i) => (i === index ? { ...t, ...patch } : t)));
   const save = async (nextStatus: string) => {
     setError('');
@@ -112,7 +169,12 @@ export function EventEditor() {
         category,
         image,
         status: nextStatus,
-        tickets: tickets.map(({ id, name, price, capacity }) => ({ id, name, price, capacity })),
+        tickets: tickets.map(({ id, name, price, capacity }) => ({
+          id,
+          name,
+          price: Number(price),
+          capacity: Number(capacity),
+        })),
       };
       const result = await send<{ event: Event }>(
         id ? `/organizer/events/${id}` : '/organizer/events',
@@ -157,7 +219,7 @@ export function EventEditor() {
           }}
         >
           <div className="editor-layout">
-            <div className="editor-form">
+            <div className="editor-form" inert={previewOpen}>
               {error && <ErrorBox>{error}</ErrorBox>}
               <section className="form-section">
                 <div className="form-section-heading">
@@ -249,6 +311,14 @@ export function EventEditor() {
                   <div className="uploaded-image">
                     <img src={image} alt="Event cover" />
                     <button
+                      type="button"
+                      className="button secondary crop-picture"
+                      disabled={uploading}
+                      onClick={() => setCropSource(image)}
+                    >
+                      Crop picture
+                    </button>
+                    <button
                       className="icon-button"
                       type="button"
                       title="Remove picture"
@@ -261,7 +331,10 @@ export function EventEditor() {
                       <input
                         type="file"
                         accept="image/jpeg,image/png,image/webp"
-                        onChange={(e) => upload(e.target.files?.[0])}
+                        onChange={(e) => {
+                          chooseImage(e.target.files?.[0]);
+                          e.target.value = '';
+                        }}
                         disabled={uploading}
                       />
                     </label>
@@ -272,16 +345,20 @@ export function EventEditor() {
                     onDragOver={(e) => e.preventDefault()}
                     onDrop={(e) => {
                       e.preventDefault();
-                      upload(e.dataTransfer.files[0]);
+                      chooseImage(e.dataTransfer.files[0]);
                     }}
                   >
                     {uploading ? <Loader2 size={28} className="spin" /> : <ImagePlus size={29} />}
                     <strong>{uploading ? 'Uploading picture...' : 'Choose a picture'}</strong>
                     <span>JPG, PNG, or WebP · Up to 5 MB</span>
+                    <span>Portrait, square, or landscape · Crop after choosing</span>
                     <input
                       type="file"
                       accept="image/jpeg,image/png,image/webp"
-                      onChange={(e) => upload(e.target.files?.[0])}
+                      onChange={(e) => {
+                        chooseImage(e.target.files?.[0]);
+                        e.target.value = '';
+                      }}
                       disabled={uploading}
                     />
                   </label>
@@ -336,7 +413,11 @@ export function EventEditor() {
                       step={100}
                       required
                       value={ticket.price}
-                      onChange={(e) => updateTicket(index, { price: Number(e.target.value) })}
+                      onChange={(e) =>
+                        updateTicket(index, {
+                          price: e.target.value === '' ? '' : Number(e.target.value),
+                        })
+                      }
                     />
                     <label className="sr-only" htmlFor={`ticket-capacity-${index}`}>
                       Ticket quantity {index + 1}
@@ -348,7 +429,11 @@ export function EventEditor() {
                       max={100000}
                       required
                       value={ticket.capacity}
-                      onChange={(e) => updateTicket(index, { capacity: Number(e.target.value) })}
+                      onChange={(e) =>
+                        updateTicket(index, {
+                          capacity: e.target.value === '' ? '' : Number(e.target.value),
+                        })
+                      }
                     />
                     <button
                       type="button"
@@ -364,6 +449,16 @@ export function EventEditor() {
                 ))}
               </section>
               <div className="editor-actions">
+                <button
+                  ref={previewButton}
+                  type="button"
+                  className="button secondary mobile-preview-button"
+                  onClick={() => setPreviewOpen(true)}
+                  aria-haspopup="dialog"
+                  aria-controls="mobile-event-preview"
+                >
+                  <Eye size={17} /> Preview
+                </button>
                 {!id && (
                   <button
                     type="button"
@@ -389,7 +484,24 @@ export function EventEditor() {
                 </button>
               </div>
             </div>
-            <aside className="editor-preview">
+            <aside
+              id="mobile-event-preview"
+              className={`editor-preview${previewOpen ? ' preview-open' : ''}`}
+              role={previewOpen ? 'dialog' : undefined}
+              aria-modal={previewOpen ? true : undefined}
+              aria-label="Event preview"
+            >
+              <div className="mobile-preview-toolbar">
+                <button
+                  ref={previewBack}
+                  type="button"
+                  className="button secondary"
+                  onClick={() => setPreviewOpen(false)}
+                >
+                  <ArrowLeft size={18} /> Back to form
+                </button>
+                <strong>Preview</strong>
+              </div>
               <div className="preview-heading">
                 <span className="eyebrow">EVENT PREVIEW</span>
                 <span className="preview-pill">
@@ -397,10 +509,23 @@ export function EventEditor() {
                   Live preview
                 </span>
               </div>
-              <div className="preview-surface">
+              <div
+                className="preview-surface"
+                style={
+                  image
+                    ? {
+                        width: `min(100%, ${Math.max(240, 340 * previewRatio)}px)`,
+                        marginInline: 'auto',
+                      }
+                    : undefined
+                }
+              >
                 <EventImage
                   event={{ image, name: name || 'Your event', category }}
                   className="preview-image"
+                  onDimensions={(width, height) => {
+                    if (height) setPreviewRatio(width / height);
+                  }}
                 />
                 <div className="preview-body">
                   <span className="eyebrow">{category}</span>
@@ -417,7 +542,7 @@ export function EventEditor() {
                   </p>
                   <div className="preview-ticket-price">
                     <span>Tickets from</span>
-                    <strong>TZS {money(Math.min(...tickets.map((t) => t.price)))}</strong>
+                    <strong>TZS {money(Math.min(...tickets.map((t) => Number(t.price))))}</strong>
                   </div>
                   <div className="preview-pay">
                     <span>+255</span>
@@ -438,6 +563,9 @@ export function EventEditor() {
             </aside>
           </div>
         </form>
+      )}
+      {cropSource && (
+        <ImageCropper source={cropSource} onClose={() => setCropSource('')} onSave={upload} />
       )}
       {success && (
         <Modal

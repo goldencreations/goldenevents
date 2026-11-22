@@ -58,8 +58,9 @@ storage. Do not put them in URLs, analytics, crash reports or ordinary preferenc
 There is no refresh-token endpoint. On expiry or revocation, sign in again.
 
 Native token login sends JSON without `Cookie` or `Origin`. If an `Origin` is
-supplied, it must match the API host. Once authenticated, bearer requests can omit
-`Origin`; a supplied foreign or malformed origin is still rejected. A browser
+supplied, it must match the API host or an explicitly configured app-shell origin.
+Once authenticated, bearer requests can omit `Origin`; other foreign or malformed
+origins are still rejected. A browser
 session value cannot be converted to a mobile token. Tokens in query parameters
 or in the `ge_session` cookie are not accepted as mobile authentication.
 
@@ -78,10 +79,21 @@ Existing browser sessions remain HttpOnly cookies with same-origin protection.
 No blanket CORS allowance or bypass was added. Browsers should use cookie login,
 not the native credential flow.
 
+The repository also includes an existing **Capacitor WebView shell**, described
+in [mobile.md](mobile.md). That shell currently uses cookie sessions with
+`credentials: include`, not the opaque-token flow for standalone native clients.
+Its origins must be explicitly configured with `APP_SHELL_ORIGINS` (typically
+`https://localhost,capacitor://localhost`). Only those origins receive credentialed
+CORS access, including the Authorization header if a shell chooses token auth.
+Production cookies are Secure with SameSite=None for this existing shell support.
+An empty allowlist disables cross-origin shell access. The docs do not enable or
+change the production allowlist.
+
 For native **unauthenticated** writes (registration, checkout, ticket claim and
 new scanner invitation acceptance), send an `Origin` equal to the API origin,
 without `/api` or a trailing path. This preserves the existing website protection
 while allowing native HTTP clients to use public workflows without buyer accounts.
+An explicitly configured app-shell origin is also accepted for bundled shells.
 
 ```sh
 curl "$API/auth/register" \

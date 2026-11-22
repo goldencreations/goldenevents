@@ -344,8 +344,16 @@ export function OrganizerEarnings() {
       )}
       {data.verification === 'nextsms' && !data.verification_phone_ready && (
         <ErrorBox>
-          <Link to="/dashboard/settings">Verify your security phone</Link> before requesting a
-          payout.
+          <div className="payout-phone-warning">
+            <span>Verify your security phone before requesting a payout.</span>
+            <Link
+              className="button secondary"
+              to="/dashboard/settings#security-phone"
+              state={{ highlightSecurityPhone: true }}
+            >
+              Verify phone
+            </Link>
+          </div>
         </ErrorBox>
       )}
       {data.shortfall > 0 && (

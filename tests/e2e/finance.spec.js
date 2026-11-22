@@ -320,6 +320,7 @@ test('alternate mobile number verification precedes fresh organizer authorizatio
 }) => {
   await page.goto('/login');
   await page.getByRole('button', { name: 'Open demo workspace' }).click();
+  await expect(page).toHaveURL(/\/dashboard$/);
   const calls = [];
   await page.route('**/api/organizer/payouts/quote', (route) =>
     route.fulfill({
@@ -399,6 +400,7 @@ test('bank withdrawals preserve leading zeros and require a fresh code after res
   const headers = { Origin: 'http://localhost:5181' };
   await page.goto('/login');
   await page.getByRole('button', { name: 'Open demo workspace' }).click();
+  await expect(page).toHaveURL(/\/dashboard$/);
   await page.goto('/dashboard/revenue');
   await page.getByRole('button', { name: 'Request payout', exact: true }).click();
   await page.getByLabel('Amount to recipient (TZS)').fill('10000');

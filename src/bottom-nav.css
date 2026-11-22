@@ -1,0 +1,198 @@
+/* Native app-shell bottom navigation.
+   Design: floating notched bar with a spring-animated bubble (user-provided).
+   Scoped to .bn so it never affects the web layout; .app-shell overrides only
+   apply when the Capacitor build sets the class on <html>. */
+
+.bn {
+  --brand: #4425e8;
+  --brand-strong: #3a1fd1;
+  --brand-soft: #a99bf0;
+  --surface: #fff;
+  --ink: #0d0d12;
+  --muted: #6b6b73;
+  --indicator: #6b7078;
+  --nav-height: 78px;
+  --nav-pad: 26px;
+  --bubble: 52px;
+  --ease-out-back: cubic-bezier(0.34, 1.56, 0.64, 1);
+  position: fixed;
+  left: 50%;
+  bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  width: min(calc(100% - 28px), 420px);
+  height: var(--nav-height);
+  z-index: 50;
+  --notch-x: 0px;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.bn__shape {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  filter: drop-shadow(0 10px 22px rgba(10, 4, 60, 0.35));
+  pointer-events: none;
+}
+.bn__shape path {
+  fill: var(--surface);
+}
+.bn__bubble {
+  position: absolute;
+  top: calc(2px - var(--bubble) / 2);
+  left: 0;
+  width: var(--bubble);
+  height: var(--bubble);
+  border-radius: 50%;
+  background: var(--surface);
+  display: grid;
+  place-items: center;
+  transform: translateX(calc(var(--notch-x) - var(--bubble) / 2));
+  will-change: transform;
+  pointer-events: none;
+}
+.bn__bubble svg {
+  width: 26px;
+  height: 26px;
+  animation: bn-pop 420ms var(--ease-out-back);
+}
+@keyframes bn-pop {
+  from {
+    transform: scale(0.4) translateY(8px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+.bn__list {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: repeat(var(--bn-count, 5), 1fr);
+  padding: 0 var(--nav-pad) 18px;
+  list-style: none;
+  margin: 0;
+}
+.bn__item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  min-width: 0;
+  border-radius: 12px;
+  color: var(--muted);
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+}
+.bn__item:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: -2px;
+}
+.bn__icon {
+  width: 24px;
+  height: 24px;
+  transition:
+    transform 300ms var(--ease-out-back),
+    opacity 200ms ease;
+}
+.bn__icon svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.bn__item:active .bn__icon {
+  transform: scale(0.88);
+}
+.bn__label {
+  font-size: 10.5px;
+  line-height: 12px;
+  white-space: nowrap;
+  transition: color 200ms ease;
+}
+.bn__item[aria-current='page'] {
+  color: var(--ink);
+}
+.bn__item[aria-current='page'] .bn__icon {
+  opacity: 0;
+  transform: translateY(14px) scale(0.6);
+}
+.bn__item[aria-current='page'] .bn__label {
+  font-weight: 700;
+  font-size: 11.5px;
+}
+.bn__indicator {
+  position: absolute;
+  left: 50%;
+  bottom: 7px;
+  width: 40%;
+  height: 4px;
+  border-radius: 4px;
+  background: var(--indicator);
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.bn .ic {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.bn .ic .accent-fill {
+  fill: var(--brand-soft);
+}
+.bn .ic .accent-stroke {
+  stroke: var(--brand-soft);
+}
+.bn__bubble .ic {
+  stroke: var(--brand-strong);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bn__bubble svg {
+    animation: none;
+  }
+  .bn__icon,
+  .bn__label {
+    transition: none;
+  }
+}
+
+/* App-shell layout: the sidebar becomes a drawer opened by the "More" tab,
+   content clears the bottom bar, and the toast sits above it. */
+.app-shell .sidebar {
+  transform: translateX(-100%);
+  width: 245px;
+  transition: transform 0.2s ease;
+  z-index: 40;
+}
+.app-shell .sidebar.is-open {
+  transform: translateX(0);
+}
+.app-shell .sidebar-scrim {
+  display: block;
+  position: fixed;
+  inset: 0;
+  background: #162d2080;
+  border: 0;
+  z-index: 35;
+}
+.app-shell .workspace-main {
+  margin-left: 0;
+  padding-bottom: calc(78px + 46px + env(safe-area-inset-bottom, 0px));
+}
+.app-shell .mobile-menu {
+  display: none;
+}
+.app-shell .toast {
+  bottom: calc(78px + 34px + env(safe-area-inset-bottom, 0px));
+}

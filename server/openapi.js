@@ -150,6 +150,7 @@ const schemas = {
       sold: integer(),
       revenue: money,
       checked_in: integer(),
+      readOnly: bool,
     },
     ['id', 'name', 'slug', 'tickets', 'url'],
   ),
@@ -569,7 +570,7 @@ export function createOpenApiSpec(config) {
     gate = { access: 'Gate' },
     admin = { access: 'Admin' };
   const mutation =
-    'Browser requests require a same-origin Origin header. Native requests without a mobile token must also supply Origin matching the API host; this includes public checkout, registration and ticket-claim requests.';
+    'Browser requests require a same-origin Origin header, or an explicitly configured APP_SHELL_ORIGINS entry for a bundled Capacitor shell. Other cross-origin access stays blocked. Native requests without a mobile token must also supply Origin matching the API host (or a configured shell origin); this includes public checkout, registration and ticket-claim requests.';
   add('get', '/health', 'Service', 'Liveness', obj({ status: str({ enum: ['ok'] }) }));
   add('get', '/ready', 'Service', 'Readiness', ref('Readiness'), {
     description: 'Returns HTTP 503 if readiness fails. Does not send money or SMS.',
@@ -635,7 +636,7 @@ export function createOpenApiSpec(config) {
   add('post', '/auth/token', 'Authentication', 'Sign in a native app', ref('Token'), {
     body: ref('Login'),
     description:
-      'Send JSON with email/password and no Cookie or Origin for a native client. A supplied Origin must match the host. Returns an opaque seven-day token, not a JWT; no Set-Cookie or refresh token. Include Authorization: Bearer <access_token> thereafter. All permissions, password-change requirements and OTP rules remain enforced.',
+      'Send JSON with email/password and no Cookie or Origin for a native client. A supplied Origin must match the host or an explicitly configured app-shell origin. Returns an opaque seven-day token, not a JWT; no Set-Cookie or refresh token. Include Authorization: Bearer <access_token> thereafter. All permissions, password-change requirements and OTP rules remain enforced.',
     sideEffect: 'Creates mobile session',
   });
   add(
@@ -729,6 +730,23 @@ export function createOpenApiSpec(config) {
     'Events',
     'Read published, paused or cancelled event',
     envelope('event', ref('Event')),
+  );
+  add(
+    'get',
+    '/live-artwork/{filename}',
+    'Development',
+    'Read artwork for a mirrored live event',
+    str({ format: 'binary' }),
+    {
+      content: Object.fromEntries(
+        ['image/webp', 'image/png', 'image/jpeg'].map((type) => [
+          type,
+          { schema: str({ format: 'binary' }) },
+        ]),
+      ),
+      description:
+        'Local read-only preview only when LIVE_PUBLIC_ORIGIN is configured. Production returns 404. Filename must be a simple WebP/PNG/JPG/JPEG basename; never a URL or path. Live-mirrored events have readOnly=true and local checkout returns 403.',
+    },
   );
   add(
     'get',
@@ -1387,7 +1405,7 @@ export function createOpenApiSpec(config) {
           in: 'cookie',
           name: 'ge_session',
           description:
-            'Set by browser login/register. Browser writes require a same-origin Origin header.',
+            'Set by browser login/register. Browser writes require a same-origin Origin header or a configured app-shell origin. Bundled shell cookie clients use credentials: include; production cookies are Secure with SameSite=None.',
         },
         ecofySignature: {
           type: 'apiKey',

@@ -200,7 +200,18 @@ export function EventPage({ hostSlug }: { hostSlug?: string }) {
               </div>
             </div>
             <aside className="checkout-aside">
-              {orderToken ? (
+              {event.readOnly ? (
+                <div className="checkout">
+                  <h2>Live event preview</h2>
+                  <p>
+                    This event is loaded from the live website. Purchases are available on the live
+                    site.
+                  </p>
+                  <a className="button primary" href={event.url} target="_blank" rel="noreferrer">
+                    Open live event <ExternalLink size={17} />
+                  </a>
+                </div>
+              ) : orderToken ? (
                 <OrderContent
                   token={orderToken}
                   onRetry={() => {
@@ -305,6 +316,14 @@ export function EventPage({ hostSlug }: { hostSlug?: string }) {
                         <span className="network-mixx">Mixx by Yas</span>
                         <span className="network-halo">HaloPesa</span>
                       </div>
+                      <label className="checkbox-label">
+                        <input
+                          type="checkbox"
+                          checked={whatsapp}
+                          onChange={(e) => setWhatsapp(e.target.checked)}
+                        />
+                        Send my ticket to this number on WhatsApp
+                      </label>
                       {config.paymentDriver === 'flutterwave' ? (
                         <label>
                           Email address
@@ -323,8 +342,7 @@ export function EventPage({ hostSlug }: { hostSlug?: string }) {
                             type="button"
                             onClick={() => setExtras(!extras)}
                           >
-                            {extras ? <Minus size={14} /> : <Plus size={14} />}Email or WhatsApp
-                            ticket
+                            {extras ? <Minus size={14} /> : <Plus size={14} />}Email me a ticket
                           </button>
                           {extras && (
                             <div className="optional-delivery">
@@ -337,27 +355,9 @@ export function EventPage({ hostSlug }: { hostSlug?: string }) {
                                   placeholder="you@example.com"
                                 />
                               </label>
-                              <label className="checkbox-label">
-                                <input
-                                  type="checkbox"
-                                  checked={whatsapp}
-                                  onChange={(e) => setWhatsapp(e.target.checked)}
-                                />
-                                Send my ticket to this number on WhatsApp
-                              </label>
                             </div>
                           )}
                         </>
-                      )}
-                      {config.paymentDriver === 'flutterwave' && (
-                        <label className="checkbox-label">
-                          <input
-                            type="checkbox"
-                            checked={whatsapp}
-                            onChange={(e) => setWhatsapp(e.target.checked)}
-                          />
-                          Send my ticket on WhatsApp
-                        </label>
                       )}
                       {error && <ErrorBox>{error}</ErrorBox>}
                       <span className="sr-only" aria-live="polite">

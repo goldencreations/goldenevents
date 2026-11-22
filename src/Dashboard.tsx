@@ -39,6 +39,8 @@ import type { Event, Order, Guest, Delivery, Stats, User } from './types';
 import { OrganizerEarnings, AdminPayouts } from './Finance';
 import { PhoneSecurity } from './PhoneSecurity';
 import { OtpActivity } from './OtpActivity';
+import { BottomNav } from './BottomNav';
+import { isAppShell } from './shell';
 
 const navigation = [
   { to: '/dashboard', label: 'Overview', icon: LayoutDashboard, end: true },
@@ -157,10 +159,10 @@ export function Shell({ children, title = 'Overview' }: { children: ReactNode; t
               Administration
             </NavLink>
           )}
-          <Link to="/">
+          <a href={config.publicOrigin}>
             <ExternalLink size={18} />
-            Explore events
-          </Link>
+            Back to homepage
+          </a>
           {config.demo && (
             <div className="demo-label">
               <span />
@@ -258,6 +260,7 @@ export function Shell({ children, title = 'Overview' }: { children: ReactNode; t
           </span>
         </footer>
       </div>
+      {isAppShell() && <BottomNav onMore={() => setOpen((value) => !value)} />}
     </div>
   );
 }
@@ -1517,7 +1520,24 @@ function SettingsPage() {
           </div>
         </div>
       )}
+      <AppVersion />
     </>
+  );
+}
+function AppVersion() {
+  const [label, setLabel] = useState('');
+  useEffect(() => {
+    if (!isAppShell()) return;
+    import('@capacitor/app')
+      .then(({ App }) => App.getInfo())
+      .then((info) => setLabel(`v${info.version} (${info.build})`))
+      .catch(() => setLabel(''));
+  }, []);
+  if (!label) return null;
+  return (
+    <p className="muted app-version" style={{ textAlign: 'center', fontSize: 12 }}>
+      Golden Events {label}
+    </p>
   );
 }
 function AdminPage() {

@@ -44,7 +44,7 @@ test('Swagger renders under production CSP on desktop and mobile without live su
   await expect(
     page.getByRole('heading', { name: 'Golden Events API', exact: false }),
   ).toBeVisible();
-  await expect(page.locator('.opblock')).toHaveCount(68);
+  await expect(page.locator('.opblock')).toHaveCount(69);
   const login = page.locator('#operations-Authentication-post_auth_token');
   await login.getByRole('button', { name: 'post /auth/token', exact: false }).first().click();
   await expect(login).toContainText('Sign in a native app');

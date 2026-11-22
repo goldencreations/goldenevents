@@ -1,9 +1,30 @@
 import path from 'node:path';
 
+// URL.origin serializes non-special schemes (capacitor:, ionic:) as "null";
+// rebuild a stable scheme://host key instead.
+export function shellOriginKey(value) {
+  const url = value instanceof URL ? value : new URL(value);
+  return `${url.protocol}//${url.host}`;
+}
+
+const parseShellOrigins = (value) =>
+  value
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      try {
+        return shellOriginKey(entry);
+      } catch {
+        throw new Error('APP_SHELL_ORIGINS must be a comma-separated list of origins.');
+      }
+    });
+
 export function makeConfig(overrides = {}) {
   const production = process.env.NODE_ENV === 'production';
   const config = {
     production,
+    livePublicOrigin: process.env.LIVE_PUBLIC_ORIGIN || '',
     port: Number(process.env.PORT || 3001),
     dataDir: path.resolve(process.env.DATA_DIR || 'data'),
     baseDomain: process.env.BASE_DOMAIN || 'goldencreation.localhost',
@@ -36,9 +57,18 @@ export function makeConfig(overrides = {}) {
     payoutMinimum:
       process.env.PAYOUT_MINIMUM_TZS === undefined ? 1000 : Number(process.env.PAYOUT_MINIMUM_TZS),
     apiRateLimit: process.env.NODE_ENV === 'test' ? 1200 : 240,
+    appShellOrigins: parseShellOrigins(process.env.APP_SHELL_ORIGINS || ''),
     workerHealth: { startedAt: null, lastCompleted: null, lastFailed: null },
     ...overrides,
   };
+  config.appShellOrigins = parseShellOrigins(config.appShellOrigins.join(','));
+  if (config.livePublicOrigin) {
+    if (config.production) throw new Error('Live public mirroring is for local development only.');
+    const origin = new URL(config.livePublicOrigin);
+    if (origin.protocol !== 'https:' || origin.username || origin.password)
+      throw new Error('LIVE_PUBLIC_ORIGIN must be an HTTPS origin.');
+    config.livePublicOrigin = origin.origin;
+  }
   if (!['demo', 'disabled', 'flutterwave', 'ecofy'].includes(config.paymentDriver))
     throw new Error('Unknown payment driver');
   if (!['auto', 'email', 'nextsms'].includes(config.payoutOtpDriver))

@@ -7,6 +7,33 @@ import { createApp } from '../server/app.js';
 import { openDatabase } from '../server/db.js';
 import { makeConfig } from '../server/config.js';
 
+test('production CSP permits local crop previews only as images', async (t) => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'golden-csp-'));
+  const db = openDatabase(dir);
+  const config = makeConfig({
+    dataDir: dir,
+    production: true,
+    baseDomain: '127.0.0.1',
+    publicOrigin: 'https://goldencreations.events',
+    appOrigin: 'https://app.goldencreations.events',
+    paymentDriver: 'disabled',
+    seedDemo: false,
+  });
+  const server = createApp(db, config).listen(0, '127.0.0.1');
+  await new Promise((resolve) => server.once('listening', resolve));
+  t.after(async () => {
+    await new Promise((resolve) => server.close(resolve));
+    db.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+  const response = await fetch(`http://127.0.0.1:${server.address().port}/api/health`);
+  assert.equal(response.status, 200);
+  const directives = response.headers.get('content-security-policy').split(';');
+  assert.deepEqual(directives.filter((directive) => directive.includes('blob:')), [
+    "img-src 'self' data: blob: https://images.unsplash.com",
+  ]);
+});
+
 test('API sessions, tenant boundaries, CSRF, and demo checkout work end to end', async (t) => {
   const dir = mkdtempSync(path.join(tmpdir(), 'golden-api-')),
     db = openDatabase(dir),

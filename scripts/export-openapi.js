@@ -10,4 +10,5 @@ copyFileSync(
   new URL('../docs/mobile-api.md', import.meta.url),
   new URL('mobile-api.md', directory),
 );
+copyFileSync(new URL('../docs/mobile.md', import.meta.url), new URL('mobile.md', directory));
 console.log(`Developer handoff exported to ${fileURLToPath(directory)}`);

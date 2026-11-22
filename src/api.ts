@@ -1,3 +1,17 @@
+import { isAppShell } from './shell';
+import { saveFileInShell } from './shellSave';
+
+const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/+$/, '');
+
+export function apiUrl(path: string): string {
+  return `${API_BASE}/api${path}`;
+}
+
+export function assetUrl(path: string): string {
+  if (!API_BASE || !path.startsWith('/')) return path;
+  return path.startsWith('/uploads/') || path.startsWith('/api/') ? `${API_BASE}${path}` : path;
+}
+
 export class ApiError extends Error {
   status: number;
   data: Record<string, unknown>;
@@ -13,7 +27,7 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
   headers.set('Accept', 'application/json');
   if (options.body && !(options.body instanceof FormData))
     headers.set('Content-Type', 'application/json');
-  const response = await fetch(`/api${path}`, { ...options, headers, credentials: 'same-origin' });
+  const response = await fetch(apiUrl(path), { ...options, headers, credentials: 'include' });
   let data;
   try {
     data = await response.json();
@@ -60,10 +74,14 @@ export function downloadCSV(filename: string, rows: (string | number)[][]) {
         .join(','),
     )
     .join('\r\n');
+  if (isAppShell()) {
+    void saveFileInShell(filename, csv).catch(() => {});
+    return;
+  }
   const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
   const a = document.createElement('a');
   a.href = url;
   a.download = filename;
   a.click();
-  URL.revokeObjectURL(url);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
