@@ -1,10 +1,11 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
-import { Routes, Route, Navigate, Link, useLocation } from 'react-router-dom';
+import { Routes, Route, Navigate, Link, useLocation, useNavigate } from 'react-router-dom';
 import { Check, ArrowLeft } from 'lucide-react';
 import { api } from './api';
 import type { User, Config } from './types';
 import { AppContext } from './context';
 import { Spinner, Brand, ErrorBox } from './ui';
+import { isAppShell } from './shell';
 const AuthPage = lazy(() => import('./AuthPage').then((m) => ({ default: m.AuthPage })));
 const Dashboard = lazy(() => import('./Dashboard').then((m) => ({ default: m.Dashboard })));
 const EventEditor = lazy(() => import('./EventEditor').then((m) => ({ default: m.EventEditor })));
@@ -55,6 +56,70 @@ function EventApp() {
   useEffect(() => {
     window.scrollTo(0, 0);
   }, [location.pathname]);
+  const navigate = useNavigate();
+  useEffect(() => {
+    if (!isAppShell() || !config) return;
+    const allowed = new Set<string>();
+    let appHost = '';
+    try {
+      const appUrl = new URL(config.appOrigin);
+      allowed.add(appUrl.origin);
+      appHost = appUrl.host;
+    } catch {
+      /* ignore malformed config origin */
+    }
+    try {
+      allowed.add(new URL(config.publicOrigin).origin);
+    } catch {
+      /* ignore malformed config origin */
+    }
+    const base = config.baseDomain;
+    const localProtocol = window.location.protocol;
+    const localHost = window.location.host;
+    const onClick = (event: MouseEvent) => {
+      if (
+        event.defaultPrevented ||
+        event.button !== 0 ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.shiftKey ||
+        event.altKey
+      )
+        return;
+      const anchor = (event.target as Element | null)?.closest?.('a[href]') as
+        | HTMLAnchorElement
+        | null;
+      if (!anchor || anchor.hasAttribute('download')) return;
+      let url: URL;
+      try {
+        url = new URL(anchor.getAttribute('href') ?? '', window.location.href);
+      } catch {
+        return;
+      }
+      const local = url.protocol === localProtocol && url.host === localHost;
+      let path = url.pathname;
+      if (local) {
+        /* same-app path */
+      } else if (allowed.has(url.origin)) {
+        if (url.host === appHost && path === '/') path = '/dashboard';
+      } else if (url.hostname.endsWith(`.${base}`)) {
+        const label = url.hostname.split('.')[0];
+        if (path === '/' && label !== 'www') path = label === 'app' ? '/dashboard' : `/e/${label}`;
+      } else {
+        return; /* external links open outside the app */
+      }
+      if (
+        path === window.location.pathname &&
+        url.search === window.location.search &&
+        url.hash
+      )
+        return; /* in-page anchors scroll natively */
+      event.preventDefault();
+      navigate(`${path}${url.search}${url.hash}`);
+    };
+    document.addEventListener('click', onClick);
+    return () => document.removeEventListener('click', onClick);
+  }, [config, navigate]);
   if (error)
     return (
       <div className="startup">
