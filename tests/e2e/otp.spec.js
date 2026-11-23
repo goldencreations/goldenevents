@@ -127,6 +127,7 @@ test('security-phone enrollment handles wrong code, expiry, resend and verified 
 test('unconfigured SMS does not offer enrollment or a fake code', async ({ page }) => {
   await page.goto('/login');
   await page.getByRole('button', { name: 'Open demo workspace' }).click();
+  await page.waitForURL('**/dashboard');
   await page.goto('/dashboard/settings');
   await expect(page.getByText('SMS verification is not connected yet.')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Send verification code' })).toHaveCount(0);
