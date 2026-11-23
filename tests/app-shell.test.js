@@ -150,3 +150,18 @@ test('production sessions issue SameSite=None cookies for the app shell', async 
   assert.ok(cookie?.includes('SameSite=None'), cookie);
   assert.ok(cookie?.includes('Secure'), cookie);
 });
+
+test('uploaded images allow cross-origin embedding for the app shell', async (t) => {
+  const { origin } = await startApp(t, {
+    paymentDriver: 'demo',
+    appShellOrigins: ['https://localhost'],
+  });
+
+  const image = await fetch(`${origin}/uploads/not-a-real-file.png`, {
+    headers: { Origin: 'https://localhost' },
+  });
+  assert.equal(image.headers.get('cross-origin-resource-policy'), 'cross-origin');
+
+  const html = await fetch(`${origin}/`);
+  assert.equal(html.headers.get('cross-origin-resource-policy'), 'same-origin');
+});
