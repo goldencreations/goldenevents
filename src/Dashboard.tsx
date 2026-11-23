@@ -1352,8 +1352,7 @@ function SettingsPage() {
   const [name, setName] = useState(user?.name || ''),
     [org, setOrg] = useState(user?.organization || ''),
     [phone, setPhone] = useState(user?.phone || ''),
-    [current, setCurrent] = useState(''),
-    [password, setPassword] = useState(''),
+    [passwordError, setPasswordError] = useState(''),
     [error, setError] = useState(''),
     [busy, setBusy] = useState(false);
   const save = async () => {
@@ -1373,16 +1372,19 @@ function SettingsPage() {
       setBusy(false);
     }
   };
-  const changePassword = async () => {
+  const changePassword = async (form: HTMLFormElement) => {
+    const fields = new FormData(form);
+    const current = String(fields.get('currentPassword') || '');
+    const password = String(fields.get('newPassword') || '');
     setBusy(true);
-    setError('');
+    setPasswordError('');
     try {
       await send('/settings/password', { current, newPassword: password }, 'PUT');
       setUser(null);
       navigate('/login');
       notify('Password updated. Sign in again.');
     } catch (e) {
-      setError((e as Error).message);
+      setPasswordError((e as Error).message);
     } finally {
       setBusy(false);
     }
@@ -1440,19 +1442,20 @@ function SettingsPage() {
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            changePassword();
+            changePassword(e.currentTarget);
           }}
         >
+          {passwordError && <ErrorBox>{passwordError}</ErrorBox>}
           <label>
             {passwordRequired ? 'Temporary password' : 'Current password'}
             <div className="password-input">
               <input
                 type={currentVisible ? 'text' : 'password'}
                 aria-label={passwordRequired ? 'Temporary password' : 'Current password'}
+                name="currentPassword"
                 autoComplete="current-password"
                 required
-                value={current}
-                onChange={(e) => setCurrent(e.target.value)}
+                onChange={() => setPasswordError('')}
               />
               <button
                 type="button"
@@ -1471,11 +1474,13 @@ function SettingsPage() {
               <input
                 type={newVisible ? 'text' : 'password'}
                 aria-label="New password"
+                name="newPassword"
                 autoComplete="new-password"
+                aria-describedby="new-password-requirements"
                 minLength={10}
+                maxLength={128}
                 required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={() => setPasswordError('')}
               />
               <button
                 type="button"
@@ -1487,6 +1492,9 @@ function SettingsPage() {
                 {newVisible ? <EyeOff size={17} /> : <Eye size={17} />}
               </button>
             </div>
+            <small id="new-password-requirements" className="muted">
+              Use 10–128 characters.
+            </small>
           </label>
           <button className="button secondary" disabled={busy}>
             Update password
