@@ -31,6 +31,8 @@ import {
   ChevronDown,
   Clock,
   MapPin,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { api, send, money, dateLabel, timeLabel, shortPhone, downloadCSV } from './api';
 import { useApp } from './context';
@@ -1342,6 +1344,8 @@ export function AccountSettings() {
   );
 }
 function SettingsPage() {
+  const [currentVisible, setCurrentVisible] = useState(false);
+  const [newVisible, setNewVisible] = useState(false);
   const { user, setUser, config, notify } = useApp();
   const passwordRequired = !!user?.must_change_password;
   const navigate = useNavigate();
@@ -1441,24 +1445,48 @@ function SettingsPage() {
         >
           <label>
             {passwordRequired ? 'Temporary password' : 'Current password'}
-            <input
-              type="password"
-              autoComplete="current-password"
-              required
-              value={current}
-              onChange={(e) => setCurrent(e.target.value)}
-            />
+            <div className="password-input">
+              <input
+                type={currentVisible ? 'text' : 'password'}
+                aria-label={passwordRequired ? 'Temporary password' : 'Current password'}
+                autoComplete="current-password"
+                required
+                value={current}
+                onChange={(e) => setCurrent(e.target.value)}
+              />
+              <button
+                type="button"
+                className="icon-button"
+                aria-label={currentVisible ? 'Hide current password' : 'Show current password'}
+                aria-pressed={currentVisible}
+                onClick={() => setCurrentVisible(!currentVisible)}
+              >
+                {currentVisible ? <EyeOff size={17} /> : <Eye size={17} />}
+              </button>
+            </div>
           </label>
           <label>
             New password
-            <input
-              type="password"
-              autoComplete="new-password"
-              minLength={10}
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
+            <div className="password-input">
+              <input
+                type={newVisible ? 'text' : 'password'}
+                aria-label="New password"
+                autoComplete="new-password"
+                minLength={10}
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+              <button
+                type="button"
+                className="icon-button"
+                aria-label={newVisible ? 'Hide new password' : 'Show new password'}
+                aria-pressed={newVisible}
+                onClick={() => setNewVisible(!newVisible)}
+              >
+                {newVisible ? <EyeOff size={17} /> : <Eye size={17} />}
+              </button>
+            </div>
           </label>
           <button className="button secondary" disabled={busy}>
             Update password
