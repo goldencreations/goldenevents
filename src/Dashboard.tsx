@@ -248,7 +248,14 @@ export function Shell({ children, title = 'Overview' }: { children: ReactNode; t
                 <Send size={18} />
               </Link>
             )}
-            <span className="topbar-avatar">{user?.name.slice(0, 1)}</span>
+            <button
+              className="topbar-avatar"
+              title="Sign out"
+              aria-label="Sign out"
+              onClick={logout}
+            >
+              {user?.name.slice(0, 1)}
+            </button>
           </div>
         </header>
         <main className="dashboard-content">{children}</main>

@@ -105,6 +105,11 @@ export function createApp(db, config, health = createHealthMonitor(db, config)) 
         : false,
     }),
   );
+  /* Event images are public posters; the app shell loads them cross-origin. */
+  app.use('/uploads', (_req, res, next) => {
+    res.set('Cross-Origin-Resource-Policy', 'cross-origin');
+    next();
+  });
   app.use('/api', (req, res, next) => {
     const raw = req.get('origin');
     let key = null;
