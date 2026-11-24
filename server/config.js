@@ -37,6 +37,7 @@ export function makeConfig(overrides = {}) {
     seedDemo:
       process.env.SEED_DEMO === 'true' || (!production && process.env.SEED_DEMO !== 'false'),
     deliveryDriver: process.env.DELIVERY_DRIVER || 'outbox',
+    ticketSmsDriver: process.env.TICKET_SMS_DRIVER || '',
     payoutDriver: process.env.PAYOUT_DRIVER || '',
     payoutOtpDriver: process.env.PAYOUT_OTP_DRIVER || 'auto',
     nextsmsEnabled: process.env.NEXTSMS_ENABLED === 'true',
@@ -52,7 +53,7 @@ export function makeConfig(overrides = {}) {
     otpSendLimitPerHour: Number(process.env.OTP_SEND_LIMIT_PER_HOUR || 5),
     otpVerificationTtlMinutes: Number(process.env.OTP_VERIFICATION_TTL_MINUTES || 15),
     platformFeeBps:
-      process.env.PLATFORM_FEE_BPS === undefined ? 500 : Number(process.env.PLATFORM_FEE_BPS),
+      process.env.PLATFORM_FEE_BPS === undefined ? 300 : Number(process.env.PLATFORM_FEE_BPS),
     providerFeeAllowanceBps: Number(process.env.PROVIDER_FEE_ALLOWANCE_BPS || 0),
     payoutMinimum:
       process.env.PAYOUT_MINIMUM_TZS === undefined ? 1000 : Number(process.env.PAYOUT_MINIMUM_TZS),
@@ -62,6 +63,9 @@ export function makeConfig(overrides = {}) {
     ...overrides,
   };
   config.appShellOrigins = parseShellOrigins(config.appShellOrigins.join(','));
+  config.ticketSmsDriver ||= config.deliveryDriver === 'live' ? 'twilio' : 'outbox';
+  if (!['outbox', 'twilio', 'nextsms'].includes(config.ticketSmsDriver))
+    throw new Error('Unknown ticket SMS driver.');
   if (config.livePublicOrigin) {
     if (config.production) throw new Error('Live public mirroring is for local development only.');
     const origin = new URL(config.livePublicOrigin);
@@ -97,6 +101,8 @@ export function makeConfig(overrides = {}) {
     );
   if (config.production && config.smsGateway)
     throw new Error('Test SMS gateways are forbidden in production.');
+  if (config.ticketSmsDriver === 'nextsms' && !config.smsGateway && !config.nextsmsEnabled)
+    throw new Error('NextSMS ticket delivery requires NEXTSMS_ENABLED=true and credentials.');
   if (
     config.otpLength !== 6 ||
     !Number.isInteger(config.otpTtlMinutes) ||

@@ -1057,8 +1057,8 @@ function DeliveryPage({ deliveries, reload }: { deliveries: Delivery[]; reload: 
         <div className="notice">
           <Send size={19} />
           <span>
-            Messages are saved to the local outbox. Email, SMS, and WhatsApp sending is not
-            connected.
+            Email messages are saved to the outbox. SMS and WhatsApp follow their separate delivery
+            settings.
           </span>
         </div>
       )}
@@ -1493,12 +1493,24 @@ function SettingsPage() {
               <span>
                 Ticket delivery
                 <small>
-                  {config.deliveryDriver === 'outbox'
-                    ? 'Local outbox · sending not connected'
-                    : 'SMTP and Twilio'}
+                  {config.ticketSmsDriver === 'nextsms'
+                    ? 'NextSMS ticket messages'
+                    : config.whatsappDriver === 'meta'
+                      ? 'Meta WhatsApp ticket messages'
+                      : config.deliveryDriver === 'outbox' && config.ticketSmsDriver !== 'twilio'
+                        ? 'Local outbox'
+                        : 'SMTP and Twilio'}
                 </small>
               </span>
-              <Status status={config.deliveryDriver === 'outbox' ? 'outbox' : 'published'} />
+              <Status
+                status={
+                  config.deliveryDriver === 'outbox' &&
+                  !['nextsms', 'twilio'].includes(config.ticketSmsDriver || '') &&
+                  config.whatsappDriver !== 'meta'
+                    ? 'outbox'
+                    : 'published'
+                }
+              />
             </div>
             <div>
               <Banknote size={21} />

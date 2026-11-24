@@ -206,7 +206,22 @@ atomically saves its one-time secret to the private environment file. It creates
 no payments and does not enable checkout. Repeating setup uses a stable webhook
 idempotency key. If interrupted after registration, retry with the same settings.
 
-`DELIVERY_DRIVER=outbox` records messages locally and never claims to send them.
+`DELIVERY_DRIVER=outbox` records messages locally and never claims to send them,
+unless a channel-specific provider is explicitly enabled (NextSMS or Meta).
+Set `TICKET_SMS_DRIVER=nextsms` with the existing `NEXTSMS_ENABLED=true`, approved
+sender and NextSMS credentials to text new paid bookings independently of email.
+The SMS includes the private booking link and a distinct `GE-XXXXXXXX` admission
+code for every ticket still held by the buyer. Open the link for scannable QR
+tickets; gate staff can also enter the code in the existing scanner. The camera
+reads QR codes, not printed SMS text. A QR and its entry code redeem the same
+ticket, so using either prevents a second admission with the other.
+Retries rebuild SMS content, excluding claimed or already-admitted tickets, and
+do not send cancelled events. Enabling the driver does not replay historical
+outbox messages. Explicit organizer retries can resend eligible bookings.
+`provider_message_id` and `provider_status` record NextSMS acknowledgment; they
+are not delivery receipts. SMS length can require multiple billable segments.
+Use `TICKET_SMS_DRIVER=outbox` to suppress purchase SMS. If unset, this setting
+inherits `outbox` or Twilio from `DELIVERY_DRIVER` for backward compatibility.
 Set `DELIVERY_DRIVER=live` with SMTP settings for email and Twilio credentials and
 senders for SMS/WhatsApp. WhatsApp is opt-in at checkout and requires an approved
 template (`TWILIO_WHATSAPP_CONTENT_SID`) with variable `1` containing the ticket
@@ -279,7 +294,7 @@ For SMS verification setup and security-phone enrollment, see [NextSMS OTP](docs
 
 Revenue shows paid ticket sales, Golden Events fees, confirmed provider fees,
 estimated organizer earnings, held funds, reserved requests, and completed payouts.
-`PLATFORM_FEE_BPS=500` means 5%, deducted from the sale rather than added to the
+`PLATFORM_FEE_BPS=300` means 3%, deducted from the sale rather than added to the
 buyer's total. The rate and whole-TZS fee are snapshotted when checkout is reserved;
 rounding is nearest shilling, half up, per order. Later rate changes do not reprice
 existing orders. Older orders without snapshots are treated as zero platform fee,

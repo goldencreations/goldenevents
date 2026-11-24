@@ -3,6 +3,8 @@ import { sendMetaTickets, metaTemplateReady } from './whatsapp.js';
 import { completeOrder, HttpError } from './domain.js';
 import { initiateEcofy, verifyEcofy, processEcofyPayments } from './ecofy.js';
 import { processPayoutJobs, syncEcofyFinance } from './finance.js';
+import { smsGateway } from './sms.js';
+import { ticketSmsBody } from './ticket-sms.js';
 
 async function flw(path, options = {}) {
   const response = await fetch(`https://api.flutterwave.com/v3${path}`, {
@@ -106,12 +108,29 @@ export async function processDeliveries(db, config) {
     .all(Date.now());
   for (const row of rows) {
     const meta = row.channel === 'whatsapp' && process.env.WHATSAPP_DRIVER === 'meta';
-    if (config.deliveryDriver === 'outbox' && !meta) {
+    if (
+      row.channel === 'sms'
+        ? config.ticketSmsDriver === 'outbox'
+        : config.deliveryDriver === 'outbox' && !meta
+    ) {
       db.prepare("UPDATE deliveries SET status='outbox',error=NULL WHERE id=?").run(row.id);
       continue;
     }
     try {
-      if (meta) {
+      if (row.channel === 'sms') {
+        const body = ticketSmsBody(db, row.order_id, config);
+        if (!body) {
+          db.prepare("UPDATE deliveries SET status='skipped',error=NULL WHERE id=?").run(row.id);
+          continue;
+        }
+        db.prepare('UPDATE deliveries SET body=? WHERE id=?').run(body, row.id);
+        if (config.ticketSmsDriver === 'nextsms') {
+          const result = await smsGateway(config).send(row.recipient, body, row.id);
+          db.prepare(
+            'UPDATE deliveries SET provider_message_id=?,provider_status=? WHERE id=?',
+          ).run(result.messageId, result.status, row.id);
+        } else await sendTwilio({ ...row, body });
+      } else if (meta) {
         if (!(await metaTemplateReady())) continue;
         if (!(await sendMetaTickets(db, row, config))) {
           db.prepare("UPDATE deliveries SET status='skipped',error=NULL WHERE id=?").run(row.id);
@@ -142,7 +161,9 @@ export async function processDeliveries(db, config) {
       db.prepare('UPDATE deliveries SET status=?,attempts=?,error=?,next_attempt=? WHERE id=?').run(
         attempts >= 5 ? 'failed' : 'queued',
         attempts,
-        error.message,
+        row.channel === 'sms' && config.ticketSmsDriver === 'nextsms'
+          ? 'NextSMS ticket delivery could not be confirmed.'
+          : error.message,
         Date.now() + Math.min(3600000, 30000 * 2 ** attempts),
         row.id,
       );

@@ -13,6 +13,7 @@ export type Config = {
   publicOrigin: string;
   paymentDriver: string;
   deliveryDriver: string;
+  ticketSmsDriver?: 'outbox' | 'twilio' | 'nextsms';
   whatsappDriver?: string;
   demo: boolean;
   ticketSharing: 'demo' | 'sms' | 'nextsms' | 'disabled';

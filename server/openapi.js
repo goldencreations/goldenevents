@@ -399,7 +399,7 @@ const schemas = {
   Finance: obj({
     currency: str({ enum: ['TZS'] }),
     fee_bps: integer({
-      description: 'Basis points; 500 is 5%. Actual historical fee snapshots remain authoritative.',
+      description: 'Basis points; 300 is 3%. Actual historical fee snapshots remain authoritative.',
     }),
     minimum: money,
     demo: bool,
@@ -451,6 +451,11 @@ const schemas = {
     attempts: integer(),
     error: str({ nullable: true }),
     next_attempt: timestamp,
+    provider_message_id: str({ nullable: true }),
+    provider_status: str({
+      nullable: true,
+      description: 'SMS provider acknowledgment, not proof of reading or admission.',
+    }),
     created_at: date,
     reference: str(),
     event_name: str(),
@@ -595,6 +600,7 @@ export function createOpenApiSpec(config) {
       publicOrigin: str(),
       paymentDriver: str(),
       deliveryDriver: str(),
+      ticketSmsDriver: str({ enum: ['outbox', 'twilio', 'nextsms'] }),
       whatsappDriver: str(),
       ticketSharing: str(),
       platformFeeBps: integer(),

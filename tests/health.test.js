@@ -72,6 +72,22 @@ test('deep health verifies database writes, worker, and provider without chargin
   assert.equal(health.readiness().status, 'ready');
 });
 
+test('NextSMS ticket delivery health remains honest about handset delivery', async (t) => {
+  const { health } = fixture(t, {
+    deliveryDriver: 'outbox',
+    ticketSmsDriver: 'nextsms',
+    nextsmsEnabled: true,
+    nextsmsUsername: 'fixture',
+    nextsmsPassword: 'fixture',
+    nextsmsSenderId: 'GoldenECARD',
+  });
+  const result = await health.collect();
+  const sms = result.components.find((c) => c.id === 'sms');
+  assert.equal(sms.status, 'unknown');
+  assert.match(sms.detail, /end-to-end delivery is not monitored/);
+  assert.equal(result.components.find((c) => c.id === 'email').status, 'not_configured');
+});
+
 test('health caches concurrent checks and limits provider calls and recorded samples', async (t) => {
   const { db, health, calls, advance } = fixture(t);
   const a = health.collect(),

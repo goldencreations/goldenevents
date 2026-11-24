@@ -124,7 +124,10 @@ export function createHealthMonitor(db, config, options = {}) {
     const twilio = !!(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN);
     const configured =
       (channel === 'whatsapp' && metaWhatsAppConfigured()) ||
-      (config.deliveryDriver === 'live' &&
+      (channel === 'sms' && config.ticketSmsDriver === 'nextsms' && config.nextsmsEnabled) ||
+      ((channel === 'sms'
+        ? config.ticketSmsDriver === 'twilio'
+        : config.deliveryDriver === 'live') &&
         (channel === 'email'
           ? !!(process.env.SMTP_HOST && process.env.SMTP_FROM)
           : channel === 'sms'

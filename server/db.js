@@ -235,6 +235,10 @@ export function openDatabase(dataDir) {
         ON ticket_verification_sends(phone_hash, created_at);
     `);
     for (const [table, fields] of Object.entries({
+      deliveries: {
+        provider_message_id: 'TEXT',
+        provider_status: 'TEXT',
+      },
       payout_quotes: {
         skip_account_check: 'INTEGER NOT NULL DEFAULT 0',
         account_name_source: 'TEXT',

@@ -282,6 +282,7 @@ export function createApp(db, config, health = createHealthMonitor(db, config)) 
       publicOrigin: config.publicOrigin,
       paymentDriver: config.paymentDriver,
       deliveryDriver: config.deliveryDriver,
+      ticketSmsDriver: config.ticketSmsDriver,
       whatsappDriver: process.env.WHATSAPP_DRIVER || 'twilio',
       ticketSharing: sharingMode(config),
       platformFeeBps: config.platformFeeBps,

@@ -153,7 +153,9 @@ test('organizer publishes, buyer pays, gate admits once, and mobile layout fits'
     /goldencreation.localhost:5181/,
   );
   await buyer.getByLabel('Mobile money number', { exact: true }).fill('0712345678');
-  const whatsapp = buyer.getByRole('checkbox', { name: 'Send my ticket to this number on WhatsApp' });
+  const whatsapp = buyer.getByRole('checkbox', {
+    name: 'Send my ticket to this number on WhatsApp',
+  });
   await expect(whatsapp).toBeVisible();
   await expect(whatsapp).not.toBeChecked();
   await whatsapp.check();
@@ -269,6 +271,31 @@ test('organizer workspace views render without browser errors', async ({ page })
     ).toBe(true);
   }
   expect(errors).toEqual([]);
+});
+
+test('purchase confirmation distinguishes NextSMS from email outbox on desktop and mobile', async ({
+  page,
+}) => {
+  await page.route('**/api/config', async (route) => {
+    const response = await route.fetch();
+    const config = await response.json();
+    await route.fulfill({
+      response,
+      json: { ...config, ticketSmsDriver: 'nextsms', deliveryDriver: 'outbox' },
+    });
+  });
+  await page.goto('/e/niffer-party');
+  await page.getByLabel('Mobile money number', { exact: true }).fill('0712345678');
+  await page.getByRole('button', { name: 'Pay TZS 20,000', exact: true }).click();
+  await page.getByRole('button', { name: 'Approve demo payment' }).click();
+  await expect(page.getByText('Your ticket link and entry codes are queued by SMS.')).toBeVisible();
+  await expect(page.locator('.ticket-qr .mono')).toHaveText(/GE-[A-F0-9]{8}/);
+  await expect(page.getByText('Ticket messages saved in the outbox.')).toHaveCount(0);
+  await page.screenshot({ path: 'test-results/sms-ticket-desktop.png', fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByText('Your ticket link and entry codes are queued by SMS.')).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: 'test-results/sms-ticket-mobile.png', fullPage: true });
 });
 
 test('declined demo payments do not issue tickets and can be retried', async ({ page }) => {

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { transaction } from './db.js';
 import { eventUrl } from './config.js';
 import { platformFee } from './fees.js';
+import { ticketSmsBody } from './ticket-sms.js';
 
 export class HttpError extends Error {
   constructor(status, message) {
@@ -345,7 +346,14 @@ export function completeOrder(db, orderId, config) {
     for (const [channel, recipient] of channels)
       db.prepare(
         'INSERT OR IGNORE INTO deliveries (id,order_id,channel,recipient,body,created_at) VALUES (?,?,?,?,?,?)',
-      ).run(randomUUID(), order.id, channel, recipient, body, new Date().toISOString());
+      ).run(
+        randomUUID(),
+        order.id,
+        channel,
+        recipient,
+        channel === 'sms' ? ticketSmsBody(db, order.id, config) : body,
+        new Date().toISOString(),
+      );
     return db.prepare('SELECT * FROM orders WHERE id=?').get(order.id);
   });
 }

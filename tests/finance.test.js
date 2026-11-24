@@ -143,6 +143,50 @@ test('fees round once in whole TZS and checkout preserves the original rate', (t
   assert.equal(finance.held, 19000);
   assert.equal(finance.provider_fees_pending, 1);
 });
+test('the 3% default applies to new orders without repricing paid or pending 5% purchases', (t) => {
+  const previous = process.env.PLATFORM_FEE_BPS;
+  let rate;
+  try {
+    delete process.env.PLATFORM_FEE_BPS;
+    rate = makeConfig({ production: false, paymentDriver: 'demo', seedDemo: false }).platformFeeBps;
+  } finally {
+    if (previous === undefined) delete process.env.PLATFORM_FEE_BPS;
+    else process.env.PLATFORM_FEE_BPS = previous;
+  }
+  assert.equal(rate, 300);
+  assert.equal(platformFee(2000, rate), 60);
+  const { db, config, user, event, sale, release } = fixture(t);
+  const paid = sale();
+  const type = db.prepare('SELECT id FROM ticket_types WHERE event_id=?').get(event.id);
+  const input = {
+    event_id: event.id,
+    ticket_type_id: type.id,
+    quantity: 1,
+    phone: '0712345678',
+    idempotency_key: randomUUID(),
+  };
+  const pending = reserveOrder(db, input, config).order;
+  config.platformFeeBps = rate;
+  assert.equal(reserveOrder(db, input, config).order.platform_fee_bps, 500);
+  completeOrder(db, pending.id, config);
+  const fresh = sale();
+  for (const order of [paid, pending]) {
+    const stored = db
+      .prepare('SELECT platform_fee_bps,platform_fee FROM orders WHERE id=?')
+      .get(order.id);
+    assert.equal(stored.platform_fee_bps, 500);
+    assert.equal(stored.platform_fee, 1000);
+    release(order);
+  }
+  assert.equal(fresh.platform_fee_bps, 300);
+  assert.equal(fresh.platform_fee, 600);
+  release(fresh);
+  const finance = organizerFinance(db, config, user);
+  assert.equal(finance.fee_bps, 300);
+  assert.equal(finance.platform_fee, 2600);
+  assert.equal(finance.provider_fees, 1500);
+  assert.equal(finance.available, 55900);
+});
 test('only administrator-confirmed, valid collections become withdrawable; legacy sales are not repriced', (t) => {
   const { db, config, user, admin, other, scanner, event, sale, release } = fixture(t);
   const order = sale();
