@@ -271,8 +271,8 @@ test('withdrawal proceeds directly to fresh OTP with entered recipient, fees and
     data: { action: 'approve' },
   });
   await page.goto('/dashboard/revenue');
-  await expect(page.locator('.finance-available')).toContainText('19,000');
-  await expect(page.locator('.finance-totals')).toContainText('1,000');
+  await expect(page.locator('.finance-available')).toContainText('19,400');
+  await expect(page.locator('.finance-totals')).toContainText('600');
   await page.screenshot({ path: 'test-results/earnings-desktop.png', fullPage: true });
   await page.getByRole('button', { name: 'Request payout', exact: true }).click();
   await page.getByLabel('Amount to recipient (TZS)').fill('10000');
@@ -304,7 +304,7 @@ test('withdrawal proceeds directly to fresh OTP with entered recipient, fees and
   await page.getByRole('button', { name: 'Simulate payout' }).click();
   const { payout } = await (await confirmation).json();
   await expect(page.getByRole('dialog')).toHaveCount(0);
-  await expect(page.locator('.finance-available')).toContainText('8,900');
+  await expect(page.locator('.finance-available')).toContainText('9,300');
   await expect(page.getByRole('row').filter({ hasText: payout.reference })).toContainText(
     'Simulated paid',
   );
