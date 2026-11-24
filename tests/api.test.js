@@ -29,9 +29,10 @@ test('production CSP permits local crop previews only as images', async (t) => {
   const response = await fetch(`http://127.0.0.1:${server.address().port}/api/health`);
   assert.equal(response.status, 200);
   const directives = response.headers.get('content-security-policy').split(';');
-  assert.deepEqual(directives.filter((directive) => directive.includes('blob:')), [
-    "img-src 'self' data: blob: https://images.unsplash.com",
-  ]);
+  assert.deepEqual(
+    directives.filter((directive) => directive.includes('blob:')),
+    ["img-src 'self' data: blob: https://images.unsplash.com"],
+  );
 });
 
 test('API sessions, tenant boundaries, CSRF, and demo checkout work end to end', async (t) => {
@@ -215,5 +216,90 @@ test('API sessions, tenant boundaries, CSRF, and demo checkout work end to end',
       )
     ).status,
     409,
+  );
+  const updatedProfile = await request(
+    '/settings',
+    { name: 'Updated Organizer', organization: 'Forest Lounge', phone: '0712345678' },
+    account.cookie,
+    'PUT',
+  );
+  assert.equal(updatedProfile.status, 200);
+  const storedProfile = (await request('/auth/me', undefined, account.cookie)).data.user;
+  assert.equal(storedProfile.name, 'Updated Organizer');
+  assert.equal(storedProfile.organization, 'Forest Lounge');
+  assert.equal(storedProfile.phone, '+255712345678');
+  const savedProfile = db
+    .prepare('SELECT name,organization,phone FROM users WHERE id=?')
+    .get(account.data.user.id);
+  assert.equal(savedProfile.name, storedProfile.name);
+  assert.equal(savedProfile.organization, storedProfile.organization);
+  assert.equal(savedProfile.phone, storedProfile.phone);
+  const otherDevice = await request('/auth/login', {
+    email: 'one@example.com',
+    password: 'StrongPassword123!',
+  });
+  assert.equal(otherDevice.status, 200);
+  assert.equal(otherDevice.data.user.name, 'Updated Organizer');
+  assert.equal(otherDevice.data.user.organization, 'Forest Lounge');
+  assert.equal(otherDevice.data.user.phone, '+255712345678');
+  assert.notEqual(otherDevice.cookie, account.cookie);
+  for (const cookie of [account.cookie, otherDevice.cookie]) {
+    assert.equal((await request('/organizer/events', undefined, cookie)).status, 200);
+  }
+  const rejectedChange = await request(
+    '/settings/password',
+    { current: 'IncorrectPassword!', newPassword: 'NewStrongPassword456!' },
+    account.cookie,
+    'PUT',
+  );
+  assert.equal(rejectedChange.status, 400);
+  assert.equal(
+    rejectedChange.data.error,
+    'Your current password is incorrect. Enter the password you use to sign in.',
+  );
+  for (const [newPassword, expectedError] of [
+    ['Short123!', 'Your new password must have at least 10 characters.'],
+    ['a'.repeat(129), 'Your new password must have no more than 128 characters.'],
+  ]) {
+    const invalidPassword = await request(
+      '/settings/password',
+      { current: 'StrongPassword123!', newPassword },
+      account.cookie,
+      'PUT',
+    );
+    assert.equal(invalidPassword.status, 400);
+    assert.equal(invalidPassword.data.error, expectedError);
+  }
+  assert.equal((await request('/organizer/events', undefined, otherDevice.cookie)).status, 200);
+  const passwordChange = await request(
+    '/settings/password',
+    { current: 'StrongPassword123!', newPassword: 'NewStrongPassword456!' },
+    account.cookie,
+    'PUT',
+  );
+  assert.equal(passwordChange.status, 200);
+  assert.equal(passwordChange.cookie, 'ge_session=');
+  for (const cookie of [account.cookie, otherDevice.cookie]) {
+    assert.equal((await request('/organizer/events', undefined, cookie)).status, 401);
+    assert.equal((await request('/auth/me', undefined, cookie)).data.user, null);
+  }
+  assert.equal((await request('/organizer/events', undefined, second.cookie)).status, 200);
+  assert.equal(
+    (
+      await request('/auth/login', {
+        email: 'one@example.com',
+        password: 'StrongPassword123!',
+      })
+    ).status,
+    401,
+  );
+  assert.equal(
+    (
+      await request('/auth/login', {
+        email: 'one@example.com',
+        password: 'NewStrongPassword456!',
+      })
+    ).status,
+    200,
   );
 });

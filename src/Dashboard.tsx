@@ -31,6 +31,8 @@ import {
   ChevronDown,
   Clock,
   MapPin,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { api, send, money, dateLabel, timeLabel, shortPhone, downloadCSV } from './api';
 import { useApp } from './context';
@@ -248,7 +250,14 @@ export function Shell({ children, title = 'Overview' }: { children: ReactNode; t
                 <Send size={18} />
               </Link>
             )}
-            <span className="topbar-avatar">{user?.name.slice(0, 1)}</span>
+            <button
+              className="topbar-avatar"
+              title="Sign out"
+              aria-label="Sign out"
+              onClick={logout}
+            >
+              {user?.name.slice(0, 1)}
+            </button>
           </div>
         </header>
         <main className="dashboard-content">{children}</main>
@@ -1335,14 +1344,15 @@ export function AccountSettings() {
   );
 }
 function SettingsPage() {
+  const [currentVisible, setCurrentVisible] = useState(false);
+  const [newVisible, setNewVisible] = useState(false);
   const { user, setUser, config, notify } = useApp();
   const passwordRequired = !!user?.must_change_password;
   const navigate = useNavigate();
   const [name, setName] = useState(user?.name || ''),
     [org, setOrg] = useState(user?.organization || ''),
     [phone, setPhone] = useState(user?.phone || ''),
-    [current, setCurrent] = useState(''),
-    [password, setPassword] = useState(''),
+    [passwordError, setPasswordError] = useState(''),
     [error, setError] = useState(''),
     [busy, setBusy] = useState(false);
   const save = async () => {
@@ -1362,16 +1372,19 @@ function SettingsPage() {
       setBusy(false);
     }
   };
-  const changePassword = async () => {
+  const changePassword = async (form: HTMLFormElement) => {
+    const fields = new FormData(form);
+    const current = String(fields.get('currentPassword') || '');
+    const password = String(fields.get('newPassword') || '');
     setBusy(true);
-    setError('');
+    setPasswordError('');
     try {
       await send('/settings/password', { current, newPassword: password }, 'PUT');
       setUser(null);
       navigate('/login');
       notify('Password updated. Sign in again.');
     } catch (e) {
-      setError((e as Error).message);
+      setPasswordError((e as Error).message);
     } finally {
       setBusy(false);
     }
@@ -1429,29 +1442,59 @@ function SettingsPage() {
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            changePassword();
+            changePassword(e.currentTarget);
           }}
         >
+          {passwordError && <ErrorBox>{passwordError}</ErrorBox>}
           <label>
             {passwordRequired ? 'Temporary password' : 'Current password'}
-            <input
-              type="password"
-              autoComplete="current-password"
-              required
-              value={current}
-              onChange={(e) => setCurrent(e.target.value)}
-            />
+            <div className="password-input">
+              <input
+                type={currentVisible ? 'text' : 'password'}
+                aria-label={passwordRequired ? 'Temporary password' : 'Current password'}
+                name="currentPassword"
+                autoComplete="current-password"
+                required
+                onChange={() => setPasswordError('')}
+              />
+              <button
+                type="button"
+                className="icon-button"
+                aria-label={currentVisible ? 'Hide current password' : 'Show current password'}
+                aria-pressed={currentVisible}
+                onClick={() => setCurrentVisible(!currentVisible)}
+              >
+                {currentVisible ? <EyeOff size={17} /> : <Eye size={17} />}
+              </button>
+            </div>
           </label>
           <label>
             New password
-            <input
-              type="password"
-              autoComplete="new-password"
-              minLength={10}
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
+            <div className="password-input">
+              <input
+                type={newVisible ? 'text' : 'password'}
+                aria-label="New password"
+                name="newPassword"
+                autoComplete="new-password"
+                aria-describedby="new-password-requirements"
+                minLength={10}
+                maxLength={128}
+                required
+                onChange={() => setPasswordError('')}
+              />
+              <button
+                type="button"
+                className="icon-button"
+                aria-label={newVisible ? 'Hide new password' : 'Show new password'}
+                aria-pressed={newVisible}
+                onClick={() => setNewVisible(!newVisible)}
+              >
+                {newVisible ? <EyeOff size={17} /> : <Eye size={17} />}
+              </button>
+            </div>
+            <small id="new-password-requirements" className="muted">
+              Use 10–128 characters.
+            </small>
           </label>
           <button className="button secondary" disabled={busy}>
             Update password

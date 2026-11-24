@@ -106,6 +106,11 @@ export function createApp(db, config, health = createHealthMonitor(db, config)) 
         : false,
     }),
   );
+  /* Event images are public posters; the app shell loads them cross-origin. */
+  app.use('/uploads', (_req, res, next) => {
+    res.set('Cross-Origin-Resource-Policy', 'cross-origin');
+    next();
+  });
   app.use('/api', (req, res, next) => {
     const raw = req.get('origin');
     let key = null;
@@ -503,17 +508,21 @@ export function createApp(db, config, health = createHealthMonitor(db, config)) 
   });
   app.put('/api/settings/password', auth, authLimit, (req, res) => {
     const { current, newPassword } = req.body;
-    if (
-      typeof current !== 'string' ||
-      typeof newPassword !== 'string' ||
-      newPassword.length < 10 ||
-      newPassword.length > 128 ||
-      (req.user.must_change_password && current === newPassword) ||
-      !verifyPassword(current, req.user.password)
-    )
+    if (typeof current !== 'string' || !current)
+      throw new HttpError(400, 'Enter your current password.');
+    if (typeof newPassword !== 'string' || newPassword.length < 10)
+      throw new HttpError(400, 'Your new password must have at least 10 characters.');
+    if (newPassword.length > 128)
+      throw new HttpError(400, 'Your new password must have no more than 128 characters.');
+    if (current.length > 128 || !verifyPassword(current, req.user.password))
       throw new HttpError(
         400,
-        'Check your current password and use at least 10 characters for the new one.',
+        'Your current password is incorrect. Enter the password you use to sign in.',
+      );
+    if (req.user.must_change_password && current === newPassword)
+      throw new HttpError(
+        400,
+        'Choose a new password that is different from your temporary password.',
       );
     transaction(db, () => {
       db.prepare('UPDATE users SET password=? WHERE id=?').run(
